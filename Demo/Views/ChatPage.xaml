@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="Demo.Views.ChatPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:models="using:Demo.Models"
+    mc:Ignorable="d"
+    Loaded="OnLoaded">
+
+    <Grid Padding="16" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Top bar: model selector + clear -->
+        <Grid Grid.Row="0" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <ComboBox x:Name="ModelSelector"
+                      Grid.Column="0"
+                      HorizontalAlignment="Stretch"
+                      PlaceholderText="Select a model"
+                      SelectionChanged="ModelSelector_SelectionChanged" />
+
+            <Button Grid.Column="1"
+                    Content="&#xE72C;"
+                    FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                    ToolTipService.ToolTip="Refresh models"
+                    Click="RefreshModels_Click" />
+
+            <Button Grid.Column="2"
+                    Content="&#xE74D;"
+                    FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                    ToolTipService.ToolTip="Clear chat"
+                    Click="ClearButton_Click" />
+        </Grid>
+
+        <InfoBar x:Name="FeedbackBar"
+                 Grid.Row="1"
+                 IsOpen="False"
+                 IsClosable="True"
+                 Severity="Informational"
+                 Closed="FeedbackBar_Closed" />
+
+        <!-- Messages list -->
+        <ListView x:Name="MessageList"
+                  Grid.Row="2"
+                  SelectionMode="None"
+                  ItemsSource="{x:Bind ViewModel.Messages, Mode=OneWay}">
+            <ListView.ItemTemplate>
+                <DataTemplate x:DataType="models:ChatUiMessage">
+                    <Grid Padding="8,6" Margin="0,2"
+                          CornerRadius="8"
+                          Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0"
+                                   Text="{x:Bind Role}"
+                                   FontWeight="SemiBold"
+                                   FontSize="12"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+                        <TextBlock Grid.Row="1"
+                                   Text="{x:Bind Content}"
+                                   TextWrapping="Wrap"
+                                   IsTextSelectionEnabled="True"
+                                   Margin="0,4,0,0" />
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="Margin" Value="0,2" />
+                </Style>
+            </ListView.ItemContainerStyle>
+        </ListView>
+
+        <!-- Input bar -->
+        <Grid Grid.Row="3" ColumnSpacing="8"
+              Padding="12"
+              CornerRadius="8"
+              Background="{ThemeResource LayerOnAcrylicFillColorDefaultBrush}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <TextBox x:Name="InputBox"
+                     Grid.Column="0"
+                     PlaceholderText="Type a message..."
+                     AcceptsReturn="False"
+                     KeyDown="InputBox_KeyDown"
+                     Text="{x:Bind ViewModel.InputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+            <Button x:Name="SendButton"
+                    Grid.Column="1"
+                    Click="SendButton_Click"
+                    Style="{ThemeResource AccentButtonStyle}">
+                <FontIcon Glyph="&#xE724;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
+            </Button>
+        </Grid>
+    </Grid>
+</UserControl>

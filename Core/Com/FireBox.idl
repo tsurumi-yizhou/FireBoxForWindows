@@ -1,0 +1,301 @@
+import "oaidl.idl";
+import "ocidl.idl";
+
+[
+    uuid(dc51fb4b-bd5d-4613-8786-e154926b7035),
+    version(1.2),
+    helpstring("FireBox Type Library")
+]
+library FireBoxLib
+{
+    importlib("stdole2.tlb");
+
+    // --- Structs (with uuid for IRecordInfo / SAFEARRAY of UDT) ---
+
+    typedef [uuid(d1a2b3c4-e5f6-4a7b-8c9d-0e1f2a3b4c5d), public]
+    struct UsageStruct {
+        hyper promptTokens;
+        hyper completionTokens;
+        hyper totalTokens;
+    } UsageStruct;
+
+    typedef [uuid(e2b3c4d5-f6a7-4b8c-9d0e-1f2a3b4c5d6e), public]
+    struct ProviderSelectionStruct {
+        int providerId;
+        BSTR providerType;
+        BSTR providerName;
+        BSTR modelId;
+    } ProviderSelectionStruct;
+
+    typedef [uuid(f3c4d5e6-a7b8-4c9d-0e1f-2a3b4c5d6e7f), public]
+    struct FireBoxErrorStruct {
+        int code;
+        BSTR message;
+        BSTR providerType;
+        BSTR providerModelId;
+    } FireBoxErrorStruct;
+
+    typedef [uuid(a4d5e6f7-b8c9-4d0e-1f2a-3b4c5d6e7f80), public]
+    struct ChatMessageStruct {
+        BSTR role;
+        BSTR content;
+    } ChatMessageStruct;
+
+    typedef [uuid(b5e6f7a8-c9d0-4e1f-2a3b-4c5d6e7f8091), public]
+    struct ChatAttachmentStruct {
+        int messageIndex;
+        int mediaFormat;
+        BSTR mimeType;
+        BSTR fileName;
+        hyper sizeBytes;
+        BSTR base64Data;
+    } ChatAttachmentStruct;
+
+    typedef [uuid(d7a8b9c0-e1f2-4a3b-4c5d-6e7f8091a2b3), public]
+    struct ChatCompletionResultStruct {
+        VARIANT_BOOL hasResponse;
+        BSTR virtualModelId;
+        BSTR messageRole;
+        BSTR messageContent;
+        BSTR reasoningText;
+        int selectionProviderId;
+        BSTR selectionProviderType;
+        BSTR selectionProviderName;
+        BSTR selectionModelId;
+        hyper usagePromptTokens;
+        hyper usageCompletionTokens;
+        hyper usageTotalTokens;
+        BSTR finishReason;
+        int errorCode;
+        BSTR errorMessage;
+        BSTR errorProviderType;
+        BSTR errorProviderModelId;
+    } ChatCompletionResultStruct;
+
+    typedef [uuid(f9c0d1e2-a3b4-4c5d-6e7f-8091a2b3c4d5), public]
+    struct EmbeddingResultStruct {
+        VARIANT_BOOL hasResponse;
+        hyper embeddingRequestId;
+        BSTR virtualModelId;
+        int selectionProviderId;
+        BSTR selectionProviderType;
+        BSTR selectionProviderName;
+        BSTR selectionModelId;
+        hyper usagePromptTokens;
+        hyper usageCompletionTokens;
+        hyper usageTotalTokens;
+        int errorCode;
+        BSTR errorMessage;
+        BSTR errorProviderType;
+        BSTR errorProviderModelId;
+    } EmbeddingResultStruct;
+
+    typedef [uuid(a0d1e2f3-b4c5-4d6e-7f80-91a2b3c4d5e6), public]
+    struct FunctionCallResultStruct {
+        VARIANT_BOOL hasResponse;
+        BSTR virtualModelId;
+        BSTR outputJson;
+        int selectionProviderId;
+        BSTR selectionProviderType;
+        BSTR selectionProviderName;
+        BSTR selectionModelId;
+        hyper usagePromptTokens;
+        hyper usageCompletionTokens;
+        hyper usageTotalTokens;
+        BSTR finishReason;
+        int errorCode;
+        BSTR errorMessage;
+        BSTR errorProviderType;
+        BSTR errorProviderModelId;
+    } FunctionCallResultStruct;
+
+    typedef [uuid(b1e2f3a4-c5d6-4e7f-8091-a2b3c4d5e6f7), public]
+    struct VirtualModelInfoStruct {
+        BSTR virtualModelId;
+        BSTR strategy;
+        VARIANT_BOOL reasoning;
+        VARIANT_BOOL toolCalling;
+        int inputFormatsMask;
+        int outputFormatsMask;
+        VARIANT_BOOL available;
+    } VirtualModelInfoStruct;
+
+    typedef [uuid(c2f3a4b5-d6e7-4f80-91a2-b3c4d5e6f7a8), public]
+    struct ModelCandidateInfoStruct {
+        int providerId;
+        BSTR providerType;
+        BSTR providerName;
+        BSTR baseUrl;
+        BSTR modelId;
+        VARIANT_BOOL enabledInConfig;
+        VARIANT_BOOL capabilitySupported;
+    } ModelCandidateInfoStruct;
+
+    // --- Interfaces ---
+
+    [
+        object,
+        uuid(e0df9d43-d19e-4125-9c9e-277020a62cb4),
+        oleautomation,
+        pointer_default(unique)
+    ]
+    interface IFireBoxControl : IUnknown
+    {
+        [id(1)] HRESULT Ping([in] BSTR message, [out, retval] BSTR* result);
+        [id(2)] HRESULT Shutdown();
+
+        // Stats
+        [id(3)] HRESULT GetDailyStats([in] int year, [in] int month, [in] int day, [out, retval] BSTR* result);
+        [id(4)] HRESULT GetMonthlyStats([in] int year, [in] int month, [out, retval] BSTR* result);
+
+        // Provider CRUD
+        [id(5)] HRESULT ListProviders([out, retval] BSTR* result);
+        [id(6)] HRESULT AddProvider([in] BSTR providerType, [in] BSTR name, [in] BSTR baseUrl, [in] BSTR apiKey, [out, retval] int* providerId);
+        [id(7)] HRESULT UpdateProvider([in] int providerId, [in] BSTR name, [in] BSTR baseUrl, [in] BSTR apiKey, [in] BSTR enabledModelIdsJson, [in] int isEnabled);
+        [id(8)] HRESULT DeleteProvider([in] int providerId);
+        [id(9)] HRESULT FetchProviderModels([in] int providerId, [out, retval] BSTR* result);
+
+        // Route CRUD
+        [id(10)] HRESULT ListRoutes([out, retval] BSTR* result);
+        [id(11)] HRESULT AddRoute([in] BSTR virtualModelId, [in] BSTR strategy, [in] BSTR candidatesJson, [in] int reasoning, [in] int toolCalling, [in] int inputFormatsMask, [in] int outputFormatsMask, [out, retval] int* routeId);
+        [id(12)] HRESULT UpdateRoute([in] int routeId, [in] BSTR virtualModelId, [in] BSTR strategy, [in] BSTR candidatesJson, [in] int reasoning, [in] int toolCalling, [in] int inputFormatsMask, [in] int outputFormatsMask);
+        [id(13)] HRESULT DeleteRoute([in] int routeId);
+
+        // Connections
+        [id(14)] HRESULT ListConnections([out, retval] BSTR* result);
+
+        // Client Access
+        [id(15)] HRESULT ListClientAccess([out, retval] BSTR* result);
+        [id(16)] HRESULT UpdateClientAccessAllowed([in] int accessId, [in] int isAllowed);
+    };
+
+    [
+        object,
+        uuid(a3c7f1d2-8b4e-4f6a-9d1c-5e2b8a0f3c7d),
+        oleautomation,
+        pointer_default(unique)
+    ]
+    interface IFireBoxStreamCallback : IUnknown
+    {
+        [id(1)] HRESULT OnStarted(
+            [in] hyper requestId,
+            [in] int selectionProviderId,
+            [in] BSTR selectionProviderType,
+            [in] BSTR selectionProviderName,
+            [in] BSTR selectionModelId);
+
+        [id(2)] HRESULT OnDelta([in] hyper requestId, [in] BSTR deltaText);
+
+        [id(3)] HRESULT OnReasoningDelta([in] hyper requestId, [in] BSTR reasoningText);
+
+        [id(4)] HRESULT OnUsage(
+            [in] hyper requestId,
+            [in] hyper promptTokens,
+            [in] hyper completionTokens,
+            [in] hyper totalTokens);
+
+        [id(5)] HRESULT OnCompleted(
+            [in] hyper requestId,
+            [in] BSTR messageRole,
+            [in] BSTR messageContent,
+            [in] BSTR reasoningText,
+            [in] BSTR finishReason,
+            [in] hyper usagePromptTokens,
+            [in] hyper usageCompletionTokens,
+            [in] hyper usageTotalTokens);
+
+        [id(6)] HRESULT OnError(
+            [in] hyper requestId,
+            [in] int errorCode,
+            [in] BSTR errorMessage,
+            [in] BSTR errorProviderType,
+            [in] BSTR errorProviderModelId);
+
+        [id(7)] HRESULT OnCancelled([in] hyper requestId);
+    };
+
+    [
+        object,
+        uuid(9d611e53-2f5a-4987-870f-e58f58e4a7f2),
+        oleautomation,
+        pointer_default(unique)
+    ]
+    interface IFireBoxCapability : IUnknown
+    {
+        [id(1)] HRESULT Ping([in] BSTR message, [out, retval] BSTR* result);
+
+        [id(10)] HRESULT GetVirtualModelCount([out] int* count);
+
+        [id(11)] HRESULT GetVirtualModelAt(
+            [in] int index,
+            [out] BSTR* virtualModelId,
+            [out] BSTR* strategy,
+            [out] int* reasoning,
+            [out] int* toolCalling,
+            [out] int* inputFormatsMask,
+            [out] int* outputFormatsMask,
+            [out, retval] int* available);
+
+        [id(2)] HRESULT ListVirtualModels(
+            [out] hyper* modelsArray,
+            [out, retval] int* count);
+
+        [id(3)] HRESULT GetModelCandidates(
+            [in] BSTR virtualModelId,
+            [out] hyper* candidatesArray,
+            [out, retval] int* count);
+
+        [id(4)] HRESULT ChatCompletion(
+            [in] BSTR virtualModelId,
+            [in] BSTR conversationText,
+            [in] float temperature,
+            [in] int maxOutputTokens,
+            [out, retval] ChatCompletionResultStruct* result);
+
+        [id(5)] HRESULT StartChatCompletionStream(
+            [in] BSTR virtualModelId,
+            [in] BSTR conversationText,
+            [in] float temperature,
+            [in] int maxOutputTokens,
+            [in] IFireBoxStreamCallback* callback,
+            [out, retval] hyper* requestId);
+
+        [id(6)] HRESULT CancelChatCompletion([in] hyper requestId);
+
+        [id(7)] HRESULT CreateEmbeddings(
+            [in] BSTR virtualModelId,
+            [in] hyper inputArray,
+            [out, retval] EmbeddingResultStruct* result);
+
+        [id(8)] HRESULT GetEmbeddingVectors(
+            [in] hyper embeddingRequestId,
+            [out] hyper* indicesArray,
+            [out] hyper* flatVectorsArray,
+            [out, retval] int* vectorDimension);
+
+        [id(9)] HRESULT CallFunction(
+            [in] BSTR virtualModelId,
+            [in] BSTR functionName,
+            [in] BSTR functionDescription,
+            [in] BSTR inputJson,
+            [in] BSTR inputSchemaJson,
+            [in] BSTR outputSchemaJson,
+            [in] float temperature,
+            [in] int maxOutputTokens,
+            [out, retval] FunctionCallResultStruct* result);
+    };
+
+    // --- Coclasses ---
+
+    [uuid(bce2f493-0f9b-473b-8df5-727bbf82cf7f)]
+    coclass FireBoxControlClass
+    {
+        [default] interface IFireBoxControl;
+    };
+
+    [uuid(b2a4e3a1-7254-4876-aca8-81f46b4f78a1)]
+    coclass FireBoxCapabilityClass
+    {
+        [default] interface IFireBoxCapability;
+    };
+};

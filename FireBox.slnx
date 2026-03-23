@@ -1,0 +1,22 @@
+<Solution>
+    <Configurations>
+        <Platform Name="x64" />
+    </Configurations>
+    <Project Path="App/App.csproj">
+        <Platform Solution="*|x64" Project="x64" />
+        <Deploy />
+    </Project>
+    <Project Path="Core/Core.csproj">
+        <Platform Solution="*|x64" Project="x64" />
+    </Project>
+    <Project Path="Service/Service.csproj">
+        <Platform Solution="*|x64" Project="x64" />
+    </Project>
+    <Project Path="Client/Client.csproj">
+        <Platform Solution="*|x64" Project="x64" />
+    </Project>
+    <Project Path="Demo/Demo.csproj">
+        <Platform Solution="*|x64" Project="x64" />
+        <Deploy />
+    </Project>
+</Solution>

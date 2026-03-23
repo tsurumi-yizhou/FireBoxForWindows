@@ -1,0 +1,73 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+        <TargetPlatformMinVersion>10.0.26100.0</TargetPlatformMinVersion>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <Platform>x64</Platform>
+        <Platforms>x64</Platforms>
+        <PlatformTarget>x64</PlatformTarget>
+        <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+        <Prefer32Bit>false</Prefer32Bit>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+        <ServerGarbageCollection>true</ServerGarbageCollection>
+        <OptimizationPreference>Speed</OptimizationPreference>
+        <TieredCompilation>true</TieredCompilation>
+        <TieredPGO>true</TieredPGO>
+        <PublishReadyToRun>true</PublishReadyToRun>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest"
+            CopyToPublishDirectory="PreserveNewest" />
+
+        <PackageReference Include="Anthropic" Version="12.8.0" />
+        <PackageReference Include="OpenAI" Version="2.9.1" />
+
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.3" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.3" />
+
+        <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.3" />
+        <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.3" />
+        <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="10.0.3" />
+
+        <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.3" />
+        <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.3" />
+
+        <ProjectReference Include="..\\Core\\Core.csproj" />
+    </ItemGroup>
+
+    <PropertyGroup>
+        <FireBoxIdl>$(MSBuildThisFileDirectory)..\Core\Com\FireBox.idl</FireBoxIdl>
+        <FireBoxMidlOutDir>$(MSBuildThisFileDirectory)obj\midl\$(TargetFramework)</FireBoxMidlOutDir>
+        <FireBoxTlb>$(FireBoxMidlOutDir)\FireBox.tlb</FireBoxTlb>
+    </PropertyGroup>
+
+    <Target Name="GenerateFireBoxTypeLib"
+        BeforeTargets="Build;Publish"
+        Inputs="$(FireBoxIdl)"
+        Outputs="$(FireBoxTlb)">
+        <PropertyGroup>
+            <_MidlSdkDir Condition="'$(WindowsSdkDir)' != ''">$(WindowsSdkDir)</_MidlSdkDir>
+            <_MidlSdkDir Condition="'$(_MidlSdkDir)' == ''">$(registry:HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows
+                Kits\Installed Roots@KitsRoot10)</_MidlSdkDir>
+            <_MidlExe>$(_MidlSdkDir)bin\$(TargetPlatformVersion)\x64\midl.exe</_MidlExe>
+        </PropertyGroup>
+        <MakeDir Directories="$(FireBoxMidlOutDir)" />
+        <Exec
+            Command="&quot;$(_MidlExe)&quot; /target NT100 /out &quot;$(FireBoxMidlOutDir)&quot; &quot;$(FireBoxIdl)&quot;" />
+    </Target>
+
+    <ItemGroup>
+        <None Include="$(FireBoxTlb)" CopyToOutputDirectory="PreserveNewest"
+            CopyToPublishDirectory="PreserveNewest" Visible="false">
+            <TargetPath>FireBox.tlb</TargetPath>
+        </None>
+    </ItemGroup>
+
+</Project>

@@ -1,0 +1,82 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+
+<Package
+    xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+    xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+    xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+    xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+    xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+    xmlns:systemai="http://schemas.microsoft.com/appx/manifest/systemai/windows10"
+    IgnorableNamespaces="uap desktop com rescap systemai">
+
+    <Identity
+        Name="fddf98a2-15f7-41f8-8e3b-2fe034dd14cc"
+        Publisher="CN=Yizhou"
+        Version="1.0.0.0" />
+
+    <Properties>
+        <DisplayName>App</DisplayName>
+        <PublisherDisplayName>Yizhou</PublisherDisplayName>
+        <Logo>Assets\StoreLogo.png</Logo>
+    </Properties>
+
+    <Dependencies>
+        <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0"
+            MaxVersionTested="10.0.26226.0" />
+    </Dependencies>
+
+    <Resources>
+        <Resource Language="x-generate" />
+    </Resources>
+
+    <Applications>
+        <Application Id="App"
+            Executable="$targetnametoken$.exe"
+            EntryPoint="$targetentrypoint$">
+            <Extensions>
+                <!-- Out-of-process COM server: OS auto-launches Service.exe on CoCreateInstance -->
+                <com:Extension Category="windows.comServer">
+                    <com:ComServer>
+                        <com:ExeServer Executable="Service\Service.exe" DisplayName="FireBox Service">
+                            <com:Class Id="bce2f493-0f9b-473b-8df5-727bbf82cf7f" DisplayName="FireBoxControl" />
+                            <com:Class Id="b2a4e3a1-7254-4876-aca8-81f46b4f78a1" DisplayName="FireBoxCapability" />
+                        </com:ExeServer>
+                    </com:ComServer>
+                </com:Extension>
+                <com:Extension Category="windows.comInterface">
+                    <com:ComInterface>
+                        <com:Interface Id="e0df9d43-d19e-4125-9c9e-277020a62cb4" UseUniversalMarshaler="true">
+                            <com:TypeLib Id="dc51fb4b-bd5d-4613-8786-e154926b7035" VersionNumber="1.2" />
+                        </com:Interface>
+                        <com:Interface Id="9d611e53-2f5a-4987-870f-e58f58e4a7f2" UseUniversalMarshaler="true">
+                            <com:TypeLib Id="dc51fb4b-bd5d-4613-8786-e154926b7035" VersionNumber="1.2" />
+                        </com:Interface>
+                        <com:Interface Id="a3c7f1d2-8b4e-4f6a-9d1c-5e2b8a0f3c7d" UseUniversalMarshaler="true">
+                            <com:TypeLib Id="dc51fb4b-bd5d-4613-8786-e154926b7035" VersionNumber="1.2" />
+                        </com:Interface>
+                        <com:TypeLib Id="dc51fb4b-bd5d-4613-8786-e154926b7035">
+                            <com:Version VersionNumber="1.2">
+                                <com:Win32Path Path="Service\FireBox.tlb" />
+                                <com:Win64Path Path="Service\FireBox.tlb" />
+                            </com:Version>
+                        </com:TypeLib>
+                    </com:ComInterface>
+                </com:Extension>
+            </Extensions>
+            <uap:VisualElements
+                DisplayName="App"
+                Description="App"
+                BackgroundColor="transparent"
+                Square150x150Logo="Assets\Square150x150Logo.png"
+                Square44x44Logo="Assets\Square44x44Logo.png">
+                <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+                <uap:SplashScreen Image="Assets\SplashScreen.png" />
+            </uap:VisualElements>
+        </Application>
+    </Applications>
+
+    <Capabilities>
+        <rescap:Capability Name="runFullTrust" />
+        <systemai:Capability Name="systemAIModels" />
+    </Capabilities>
+</Package>

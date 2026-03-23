@@ -1,0 +1,141 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>WinExe</OutputType>
+        <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+        <TargetPlatformMinVersion>10.0.26100.0</TargetPlatformMinVersion>
+        <RootNamespace>App</RootNamespace>
+        <ApplicationManifest>app.manifest</ApplicationManifest>
+        <Platforms>x64</Platforms>
+        <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+        <PublishProfile>win-x64.pubxml</PublishProfile>
+        <UseWinUI>true</UseWinUI>
+        <WinUISDKReferences>false</WinUISDKReferences>
+        <EnableMsixTooling>true</EnableMsixTooling>
+        <Nullable>enable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+
+    <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+        <ProjectCapability Include="None" />
+    </ItemGroup>
+
+    <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+        <WindowsPackageType>None</WindowsPackageType>
+        <HasPackageAndPublishMenu>false</HasPackageAndPublishMenu>
+        <PublishReadyToRun>false</PublishReadyToRun>
+        <PublishTrimmed>false</PublishTrimmed>
+    </PropertyGroup>
+
+    <ItemGroup Condition="'$(Configuration)' == 'Release'">
+        <ProjectCapability Include="Msix" />
+    </ItemGroup>
+
+    <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+        <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
+        <PublishReadyToRun>true</PublishReadyToRun>
+        <PublishTrimmed>false</PublishTrimmed>
+        <TieredPGO>true</TieredPGO>
+        <OptimizationPreference>Speed</OptimizationPreference>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Manifest Include="$(ApplicationManifest)" />
+
+        <None Remove="Assets\**\*" />
+        <Content Include="Assets\**\*" />
+
+        <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+        <PackageReference Include="CommunityToolkit.WinUI.Animations" Version="8.2.251219" />
+        <PackageReference Include="CommunityToolkit.WinUI.Behaviors" Version="8.2.251219" />
+        <PackageReference Include="CommunityToolkit.WinUI.Collections" Version="8.2.251219" />
+        <PackageReference Include="CommunityToolkit.WinUI.Connectivity" Version="7.1.2" />
+        <PackageReference Include="CommunityToolkit.WinUI.Controls.Primitives" Version="8.2.251219" />
+        <PackageReference Include="CommunityToolkit.WinUI.Controls.RichSuggestBox"
+            Version="8.2.251219" />
+        <PackageReference Include="CommunityToolkit.WinUI.Controls.Segmented" Version="8.2.251219" />
+        <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls"
+            Version="8.2.251219" />
+        <PackageReference Include="CommunityToolkit.WinUI.Controls.Sizers" Version="8.2.251219" />
+        <PackageReference Include="CommunityToolkit.WinUI.Controls.TokenizingTextBox"
+            Version="8.2.251219" />
+        <PackageReference Include="CommunityToolkit.WinUI.Converters" Version="8.2.251219" />
+        <PackageReference Include="CommunityToolkit.WinUI.Extensions" Version="8.2.251219" />
+        <PackageReference Include="CommunityToolkit.WinUI.Helpers" Version="8.2.251219" />
+        <PackageReference Include="CommunityToolkit.WinUI.Triggers" Version="8.2.251219" />
+        <PackageReference Include="CommunityToolkit.WinUI.UI.Controls.DataGrid" Version="7.1.2" />
+        <PackageReference Include="CommunityToolkit.WinUI.UI.Controls.Markdown" Version="7.1.2" />
+        <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.3" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.3" />
+        <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.3" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.3" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.3" />
+        <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
+        <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />
+        <PackageReference Include="WinUIEx" Version="2.9.0" />
+
+
+        <ProjectReference Include="..\\Core\\Core.csproj" />
+    </ItemGroup>
+
+    <PropertyGroup>
+        <ServicePublishDir>$(MSBuildThisFileDirectory)obj\service-publish\</ServicePublishDir>
+    </PropertyGroup>
+
+    <!-- Debug: build Service and copy to $(OutDir)Service\ so App can discover it at runtime -->
+    <Target Name="BuildAndCopyService"
+        Condition="'$(Configuration)' == 'Debug'"
+        AfterTargets="Build">
+        <MSBuild Projects="..\\Service\\Service.csproj"
+            Targets="Build"
+            Properties="Configuration=$(Configuration);Platform=$(Platform)" />
+
+        <PropertyGroup>
+            <_ServiceBinDir>
+                $(MSBuildThisFileDirectory)..\\Service\\bin\\$(Platform)\\$(Configuration)\\$(TargetFramework)\\</_ServiceBinDir>
+        </PropertyGroup>
+
+        <ItemGroup>
+            <_ServiceFiles Include="$(_ServiceBinDir)**\*" Exclude="$(_ServiceBinDir)**\*.pdb" />
+        </ItemGroup>
+
+        <Copy SourceFiles="@(_ServiceFiles)"
+            DestinationFolder="$(OutDir)Service\%(RecursiveDir)"
+            SkipUnchangedFiles="true" />
+    </Target>
+
+    <!-- Release: publish Service into MSIX package under Service\ -->
+    <Target Name="AddDesktopManifestSchema"
+        Condition="'$(Configuration)' == 'Release'"
+        AfterTargets="_GetAppxManifestSchemaItems">
+        <ItemGroup
+            Condition="Exists('$(WindowsSdkDir)Include\\$(TargetPlatformVersion)\\winrt\\DesktopManifestSchema.xsd')">
+            <AppxManifestSchema
+                Include="$(WindowsSdkDir)Include\\$(TargetPlatformVersion)\\winrt\\DesktopManifestSchema.xsd">
+                <NamespaceAlias>desktop</NamespaceAlias>
+                <NamespaceUri>http://schemas.microsoft.com/appx/manifest/desktop/windows10</NamespaceUri>
+            </AppxManifestSchema>
+        </ItemGroup>
+    </Target>
+
+    <Target Name="PublishAndIncludeService"
+        Condition="'$(Configuration)' == 'Release'"
+        AfterTargets="GetPackagingOutputs"
+        BeforeTargets="_ComputeAppxPackagePayload">
+        <MSBuild Projects="..\\Service\\Service.csproj"
+            Targets="Publish"
+            Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=false;PublishDir=$(ServicePublishDir)" />
+
+        <ItemGroup>
+            <_ServicePublishFiles Include="$(ServicePublishDir)**\*"
+                Exclude="$(ServicePublishDir)**\*.pdb" />
+        </ItemGroup>
+
+        <ItemGroup>
+            <PackagingOutputs Include="@(_ServicePublishFiles)">
+                <OutputGroup>ServicePayload</OutputGroup>
+                <TargetPath>Service\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+            </PackagingOutputs>
+        </ItemGroup>
+    </Target>
+
+</Project>
