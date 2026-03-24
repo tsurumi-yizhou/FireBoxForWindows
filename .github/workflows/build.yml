@@ -28,6 +28,11 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Setup MSVC developer command prompt
+        uses: ilammy/msvc-dev-cmd@v1.13.0
+        with:
+          arch: x64
+
       - name: Compute build metadata
         id: meta
         shell: pwsh
