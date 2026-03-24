@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <OutputType>Exe</OutputType>
+        <OutputType>WinExe</OutputType>
         <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
         <TargetPlatformMinVersion>10.0.26100.0</TargetPlatformMinVersion>
         <ImplicitUsings>enable</ImplicitUsings>
@@ -43,32 +43,43 @@
     </ItemGroup>
 
     <PropertyGroup>
-        <FireBoxIdl>$(MSBuildThisFileDirectory)..\Core\Com\FireBox.idl</FireBoxIdl>
-        <FireBoxMidlOutDir>$(MSBuildThisFileDirectory)obj\midl\$(TargetFramework)</FireBoxMidlOutDir>
-        <FireBoxTlb>$(FireBoxMidlOutDir)\FireBox.tlb</FireBoxTlb>
+        <FireBoxCoreTlb>$(MSBuildThisFileDirectory)..\Core\obj\$(Platform)\$(Configuration)\net10.0\midl\FireBox.tlb</FireBoxCoreTlb>
+        <FireBoxTargetDirTlb>$(TargetDir)FireBox.tlb</FireBoxTargetDirTlb>
     </PropertyGroup>
 
-    <Target Name="GenerateFireBoxTypeLib"
-        Condition="'$(EnableFireBoxTypeLibGeneration)' != 'false'"
-        BeforeTargets="Build;Publish"
-        Inputs="$(FireBoxIdl)"
-        Outputs="$(FireBoxTlb)">
-        <PropertyGroup>
-            <_MidlSdkDir Condition="'$(WindowsSdkDir)' != ''">$(WindowsSdkDir)</_MidlSdkDir>
-            <_MidlSdkDir Condition="'$(_MidlSdkDir)' == ''">$(registry:HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows Kits\Installed Roots@KitsRoot10)</_MidlSdkDir>
-            <_MidlSdkDir Condition="'$(_MidlSdkDir)' == '' and Exists('$(ProgramFiles(x86))\Windows Kits\10\')">$(ProgramFiles(x86))\Windows Kits\10\</_MidlSdkDir>
-            <_MidlExe>$(_MidlSdkDir)bin\$(TargetPlatformVersion)\x64\midl.exe</_MidlExe>
-        </PropertyGroup>
-        <MakeDir Directories="$(FireBoxMidlOutDir)" />
-        <Exec
-            Command="&quot;$(_MidlExe)&quot; /target NT100 /out &quot;$(FireBoxMidlOutDir)&quot; &quot;$(FireBoxIdl)&quot;" />
-    </Target>
-
     <ItemGroup>
-        <None Include="$(FireBoxTlb)" CopyToOutputDirectory="PreserveNewest"
-            CopyToPublishDirectory="PreserveNewest" Visible="false" Condition="Exists('$(FireBoxTlb)')">
+        <None Include="$(FireBoxCoreTlb)" CopyToOutputDirectory="PreserveNewest"
+            CopyToPublishDirectory="PreserveNewest" Visible="false" Condition="Exists('$(FireBoxCoreTlb)')">
             <TargetPath>FireBox.tlb</TargetPath>
         </None>
     </ItemGroup>
+
+    <Target Name="EnsureTypeLibNextToServiceExe"
+        AfterTargets="Build">
+        <Copy
+            SourceFiles="$(FireBoxCoreTlb)"
+            DestinationFiles="$(FireBoxTargetDirTlb)"
+            Condition="Exists('$(FireBoxCoreTlb)')" />
+
+        <Error
+            Condition="!Exists('$(FireBoxTargetDirTlb)')"
+            Text="FireBox.tlb is required next to Service.exe. Core must generate it at $(FireBoxCoreTlb)." />
+    </Target>
+
+    <Target Name="EnsureTypeLibInPublishOutput"
+        AfterTargets="Publish">
+        <PropertyGroup>
+            <FireBoxPublishDirTlb>$(PublishDir)FireBox.tlb</FireBoxPublishDirTlb>
+        </PropertyGroup>
+
+        <Copy
+            SourceFiles="$(FireBoxCoreTlb)"
+            DestinationFiles="$(FireBoxPublishDirTlb)"
+            Condition="Exists('$(FireBoxCoreTlb)') and '$(PublishDir)' != ''" />
+
+        <Error
+            Condition="'$(PublishDir)' != '' and !Exists('$(FireBoxPublishDirTlb)')"
+            Text="FireBox.tlb is required in publish output at $(FireBoxPublishDirTlb)." />
+    </Target>
 
 </Project>

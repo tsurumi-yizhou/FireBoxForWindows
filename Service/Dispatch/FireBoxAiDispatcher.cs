@@ -83,163 +83,120 @@ public sealed class FireBoxAiDispatcher : IFireBoxAiDispatcher
         return models.FirstOrDefault(m => m.VirtualModelId == virtualModelId)?.Candidates ?? [];
     }
 
-    // --- Chat Completion with real failover ---
+    // --- Chat Completion with single candidate execution ---
 
     public async Task<ChatCompletionResult> ChatCompletionAsync(ChatCompletionRequest request, CancellationToken ct)
     {
-        var resolved = await ResolveCandidatesAsync(request.VirtualModelId);
-        Exception? lastException = null;
+        var (gateway, provider, modelId) = await ResolveCandidateAsync(request.VirtualModelId);
+        var selection = new ProviderSelection(provider.Id, provider.ProviderType, provider.Name, modelId);
 
-        foreach (var (gateway, provider, modelId) in resolved)
+        try
         {
-            try
-            {
-                var response = await gateway.ChatCompletionAsync(
-                    modelId, request.Messages, request.Attachments,
-                    request.Temperature, request.MaxOutputTokens, ct);
+            var response = await gateway.ChatCompletionAsync(
+                modelId, request.Messages, request.Attachments,
+                request.Temperature, request.MaxOutputTokens, ct);
 
-                var selection = new ProviderSelection(provider.Id, provider.ProviderType, provider.Name, modelId);
-                var result = response with { VirtualModelId = request.VirtualModelId, Selection = selection };
-                await RecordUsageAsync(provider, modelId, result.Usage);
-                return new ChatCompletionResult(result, null);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "ChatCompletion failed on {Provider}/{Model}, trying next candidate",
-                    provider.Name, modelId);
-                lastException = ex;
-            }
+            var result = response with { VirtualModelId = request.VirtualModelId, Selection = selection };
+            await RecordUsageAsync(provider, modelId, result.Usage);
+            return new ChatCompletionResult(result, null);
         }
-
-        return new ChatCompletionResult(null, new FireBoxError(
-            FireBoxError.NoCandidate,
-            $"All candidates failed for '{request.VirtualModelId}': {lastException?.Message}",
-            null, null));
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "ChatCompletion failed on {Provider}/{Model}", provider.Name, modelId);
+            return new ChatCompletionResult(null, CreateProviderError(ex, provider, modelId));
+        }
     }
 
-    // --- Streaming with real failover ---
+    // --- Streaming with single candidate execution ---
 
     public async IAsyncEnumerable<ChatStreamEvent> ChatCompletionStreamAsync(
         ChatCompletionRequest request, [EnumeratorCancellation] CancellationToken ct)
     {
         var channel = System.Threading.Channels.Channel.CreateUnbounded<ChatStreamEvent>();
-        _ = Task.Run(() => StreamWithFailoverAsync(request, channel.Writer, ct), ct);
+        _ = Task.Run(() => StreamSingleCandidateAsync(request, channel.Writer, ct), ct);
 
         await foreach (var evt in channel.Reader.ReadAllAsync(ct))
             yield return evt;
     }
 
-    private async Task StreamWithFailoverAsync(
+    private async Task StreamSingleCandidateAsync(
         ChatCompletionRequest request,
         System.Threading.Channels.ChannelWriter<ChatStreamEvent> writer,
         CancellationToken ct)
     {
         var requestId = Interlocked.Increment(ref s_requestIdCounter);
-        Exception? lastException = null;
-        var startedEmitted = false;
 
         try
         {
-            var resolved = await ResolveCandidatesAsync(request.VirtualModelId);
+            var (gateway, provider, modelId) = await ResolveCandidateAsync(request.VirtualModelId);
+            var selection = new ProviderSelection(provider.Id, provider.ProviderType, provider.Name, modelId);
+            var stream = gateway.ChatCompletionStreamAsync(
+                modelId, request.Messages, request.Attachments,
+                request.Temperature, request.MaxOutputTokens, ct);
 
-            foreach (var (gateway, provider, modelId) in resolved)
+            var fullContent = new System.Text.StringBuilder();
+            var fullReasoning = new System.Text.StringBuilder();
+            long promptTokens = 0, completionTokens = 0;
+            string? finishReason = null;
+            var startedEmitted = false;
+
+            try
             {
-                var selection = new ProviderSelection(provider.Id, provider.ProviderType, provider.Name, modelId);
-
-                IAsyncEnumerable<StreamChunk> stream;
-                try
+                await foreach (var chunk in stream.WithCancellation(ct))
                 {
-                    stream = gateway.ChatCompletionStreamAsync(
-                        modelId, request.Messages, request.Attachments,
-                        request.Temperature, request.MaxOutputTokens, ct);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Stream setup failed on {Provider}/{Model}", provider.Name, modelId);
-                    lastException = ex;
-                    continue;
-                }
-
-                var fullContent = new System.Text.StringBuilder();
-                var fullReasoning = new System.Text.StringBuilder();
-                long promptTokens = 0, completionTokens = 0;
-                string? finishReason = null;
-                var succeeded = false;
-                var anyEventEmitted = false;
-
-                try
-                {
-                    await foreach (var chunk in stream.WithCancellation(ct))
+                    if (!startedEmitted)
                     {
-                        // Defer Started until the first real content event — ensures
-                        // the reported provider matches the one that actually produces output.
-                        if (!startedEmitted)
-                        {
-                            await writer.WriteAsync(new ChatStreamEvent(requestId, ChatStreamEventType.Started, Selection: selection), ct);
-                            startedEmitted = true;
-                        }
-
-                        switch (chunk.Type)
-                        {
-                            case StreamChunkType.Delta:
-                                fullContent.Append(chunk.DeltaText);
-                                await writer.WriteAsync(new ChatStreamEvent(requestId, ChatStreamEventType.Delta, DeltaText: chunk.DeltaText), ct);
-                                anyEventEmitted = true;
-                                break;
-                            case StreamChunkType.ReasoningDelta:
-                                fullReasoning.Append(chunk.ReasoningText);
-                                await writer.WriteAsync(new ChatStreamEvent(requestId, ChatStreamEventType.ReasoningDelta, ReasoningText: chunk.ReasoningText), ct);
-                                anyEventEmitted = true;
-                                break;
-                            case StreamChunkType.Usage:
-                                promptTokens = chunk.PromptTokens;
-                                completionTokens = chunk.CompletionTokens;
-                                var usage = new Usage(promptTokens, completionTokens, promptTokens + completionTokens);
-                                await writer.WriteAsync(new ChatStreamEvent(requestId, ChatStreamEventType.Usage, Usage: usage), ct);
-                                anyEventEmitted = true;
-                                break;
-                            case StreamChunkType.Done:
-                                finishReason = chunk.FinishReason;
-                                break;
-                        }
+                        await writer.WriteAsync(new ChatStreamEvent(requestId, ChatStreamEventType.Started, Selection: selection), ct);
+                        startedEmitted = true;
                     }
 
-                    var finalUsage = new Usage(promptTokens, completionTokens, promptTokens + completionTokens);
-                    var reasoning = fullReasoning.Length > 0 ? fullReasoning.ToString() : null;
-                    var completedResponse = new ChatCompletionResponse(
-                        request.VirtualModelId,
-                        new ChatMessage("assistant", fullContent.ToString()),
-                        reasoning, selection, finalUsage, finishReason ?? "stop");
-
-                    await writer.WriteAsync(new ChatStreamEvent(requestId, ChatStreamEventType.Completed, Response: completedResponse), ct);
-                    await RecordUsageAsync(provider, modelId, finalUsage);
-                    succeeded = true;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Stream failed mid-flight on {Provider}/{Model}", provider.Name, modelId);
-                    lastException = ex;
-                    // If any content/reasoning/usage events were already emitted, can't failover cleanly
-                    if (anyEventEmitted)
+                    switch (chunk.Type)
                     {
-                        await writer.WriteAsync(new ChatStreamEvent(requestId, ChatStreamEventType.Error,
-                            Error: new FireBoxError(FireBoxError.ProviderError, ex.Message, provider.ProviderType, modelId)), ct);
-                        return;
+                        case StreamChunkType.Delta:
+                            fullContent.Append(chunk.DeltaText);
+                            await writer.WriteAsync(new ChatStreamEvent(requestId, ChatStreamEventType.Delta, DeltaText: chunk.DeltaText), ct);
+                            break;
+                        case StreamChunkType.ReasoningDelta:
+                            fullReasoning.Append(chunk.ReasoningText);
+                            await writer.WriteAsync(new ChatStreamEvent(requestId, ChatStreamEventType.ReasoningDelta, ReasoningText: chunk.ReasoningText), ct);
+                            break;
+                        case StreamChunkType.Usage:
+                            promptTokens = chunk.PromptTokens;
+                            completionTokens = chunk.CompletionTokens;
+                            var usage = new Usage(promptTokens, completionTokens, promptTokens + completionTokens);
+                            await writer.WriteAsync(new ChatStreamEvent(requestId, ChatStreamEventType.Usage, Usage: usage), ct);
+                            break;
+                        case StreamChunkType.Done:
+                            finishReason = chunk.FinishReason;
+                            break;
                     }
                 }
 
-                if (succeeded) return;
+                var finalUsage = new Usage(promptTokens, completionTokens, promptTokens + completionTokens);
+                var reasoning = fullReasoning.Length > 0 ? fullReasoning.ToString() : null;
+                var completedResponse = new ChatCompletionResponse(
+                    request.VirtualModelId,
+                    new ChatMessage("assistant", fullContent.ToString()),
+                    reasoning, selection, finalUsage, finishReason ?? "stop");
+
+                await writer.WriteAsync(new ChatStreamEvent(requestId, ChatStreamEventType.Completed, Response: completedResponse), ct);
+                await RecordUsageAsync(provider, modelId, finalUsage);
             }
-
-            // All candidates exhausted
-            await writer.WriteAsync(new ChatStreamEvent(requestId, ChatStreamEventType.Error,
-                Error: new FireBoxError(FireBoxError.NoCandidate,
-                    $"All candidates failed for '{request.VirtualModelId}': {lastException?.Message}",
-                    null, null)), ct);
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Stream failed on {Provider}/{Model}", provider.Name, modelId);
+                await writer.WriteAsync(new ChatStreamEvent(requestId, ChatStreamEventType.Error,
+                    Error: CreateProviderError(ex, provider, modelId)), CancellationToken.None);
+            }
         }
         catch (OperationCanceledException)
         {
             await writer.WriteAsync(new ChatStreamEvent(requestId, ChatStreamEventType.Cancelled), CancellationToken.None);
+        }
+        catch (InvalidOperationException ex)
+        {
+            await writer.WriteAsync(new ChatStreamEvent(requestId, ChatStreamEventType.Error,
+                Error: new FireBoxError(FireBoxError.NoCandidate, ex.Message, null, null)), CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -252,80 +209,50 @@ public sealed class FireBoxAiDispatcher : IFireBoxAiDispatcher
         }
     }
 
-    // --- Embeddings with real failover ---
+    // --- Embeddings with single candidate execution ---
 
     public async Task<EmbeddingResult> CreateEmbeddingsAsync(EmbeddingRequest request, CancellationToken ct)
     {
-        var resolved = await ResolveCandidatesAsync(request.VirtualModelId);
-        Exception? lastException = null;
+        var (gateway, provider, modelId) = await ResolveCandidateAsync(request.VirtualModelId);
+        var selection = new ProviderSelection(provider.Id, provider.ProviderType, provider.Name, modelId);
 
-        foreach (var (gateway, provider, modelId) in resolved)
+        try
         {
-            try
-            {
-                var response = await gateway.CreateEmbeddingsAsync(modelId, request.Input, ct);
-                var selection = new ProviderSelection(provider.Id, provider.ProviderType, provider.Name, modelId);
-                var result = response with { VirtualModelId = request.VirtualModelId, Selection = selection };
-                await RecordUsageAsync(provider, modelId, result.Usage);
-                return new EmbeddingResult(result, null);
-            }
-            catch (NotSupportedException)
-            {
-                _logger.LogDebug("Embeddings not supported by {Provider}, skipping", provider.ProviderType);
-                lastException = new NotSupportedException($"{provider.ProviderType} does not support embeddings");
-                continue;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Embeddings failed on {Provider}/{Model}", provider.Name, modelId);
-                lastException = ex;
-            }
+            var response = await gateway.CreateEmbeddingsAsync(modelId, request.Input, ct);
+            var result = response with { VirtualModelId = request.VirtualModelId, Selection = selection };
+            await RecordUsageAsync(provider, modelId, result.Usage);
+            return new EmbeddingResult(result, null);
         }
-
-        return new EmbeddingResult(null, new FireBoxError(
-            FireBoxError.NoCandidate,
-            $"All candidates failed for '{request.VirtualModelId}': {lastException?.Message}",
-            null, null));
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Embeddings failed on {Provider}/{Model}", provider.Name, modelId);
+            return new EmbeddingResult(null, CreateProviderError(ex, provider, modelId));
+        }
     }
 
-    // --- Function Call with real failover ---
+    // --- Function Call with single candidate execution ---
 
     public async Task<FunctionCallResult> CallFunctionAsync(FunctionCallRequest request, CancellationToken ct)
     {
-        var resolved = await ResolveCandidatesAsync(request.VirtualModelId);
-        Exception? lastException = null;
+        var (gateway, provider, modelId) = await ResolveCandidateAsync(request.VirtualModelId);
+        var selection = new ProviderSelection(provider.Id, provider.ProviderType, provider.Name, modelId);
 
-        foreach (var (gateway, provider, modelId) in resolved)
+        try
         {
-            try
-            {
-                var response = await gateway.CallFunctionAsync(
-                    modelId, request.FunctionName, request.FunctionDescription,
-                    request.InputJson, request.InputSchemaJson, request.OutputSchemaJson,
-                    request.Temperature, request.MaxOutputTokens, ct);
+            var response = await gateway.CallFunctionAsync(
+                modelId, request.FunctionName, request.FunctionDescription,
+                request.InputJson, request.InputSchemaJson, request.OutputSchemaJson,
+                request.Temperature, request.MaxOutputTokens, ct);
 
-                var selection = new ProviderSelection(provider.Id, provider.ProviderType, provider.Name, modelId);
-                var result = response with { VirtualModelId = request.VirtualModelId, Selection = selection };
-                await RecordUsageAsync(provider, modelId, result.Usage);
-                return new FunctionCallResult(result, null);
-            }
-            catch (NotSupportedException)
-            {
-                _logger.LogDebug("Function call not supported by {Provider}, skipping", provider.ProviderType);
-                lastException = new NotSupportedException($"{provider.ProviderType} does not support function calls");
-                continue;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Function call failed on {Provider}/{Model}", provider.Name, modelId);
-                lastException = ex;
-            }
+            var result = response with { VirtualModelId = request.VirtualModelId, Selection = selection };
+            await RecordUsageAsync(provider, modelId, result.Usage);
+            return new FunctionCallResult(result, null);
         }
-
-        return new FunctionCallResult(null, new FireBoxError(
-            FireBoxError.NoCandidate,
-            $"All candidates failed for '{request.VirtualModelId}': {lastException?.Message}",
-            null, null));
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Function call failed on {Provider}/{Model}", provider.Name, modelId);
+            return new FunctionCallResult(null, CreateProviderError(ex, provider, modelId));
+        }
     }
 
     // --- Candidate resolution ---
@@ -333,10 +260,10 @@ public sealed class FireBoxAiDispatcher : IFireBoxAiDispatcher
     private static long s_requestIdCounter;
 
     /// <summary>
-    /// Resolves all viable candidates for a virtual model, ordered by strategy.
+    /// Resolves one viable candidate for a virtual model according to the configured selection strategy.
     /// Filters by: model in enabled list, capability supported.
     /// </summary>
-    private async Task<List<(IProviderGateway Gateway, ProviderConfigEntity Provider, string ModelId)>> ResolveCandidatesAsync(string virtualModelId)
+    private async Task<(IProviderGateway Gateway, ProviderConfigEntity Provider, string ModelId)> ResolveCandidateAsync(string virtualModelId)
     {
         var routes = await _configRepo.ListRoutesAsync();
         var route = routes.FirstOrDefault(r => r.VirtualModelId == virtualModelId)
@@ -345,12 +272,9 @@ public sealed class FireBoxAiDispatcher : IFireBoxAiDispatcher
         var providers = await _configRepo.ListProvidersAsync();
         var candidates = _configRepo.GetCandidates(route);
 
-        // Order by strategy
-        var orderedCandidates = route.Strategy == "Random"
+        var orderedCandidates = string.Equals(route.Strategy, "Random", StringComparison.OrdinalIgnoreCase)
             ? candidates.OrderBy(_ => Random.Shared.Next()).ToList()
-            : candidates; // Failover: use configured order
-
-        var result = new List<(IProviderGateway, ProviderConfigEntity, string)>();
+            : candidates;
 
         foreach (var candidate in orderedCandidates)
         {
@@ -368,13 +292,10 @@ public sealed class FireBoxAiDispatcher : IFireBoxAiDispatcher
             if (string.IsNullOrEmpty(apiKey)) continue;
 
             var gateway = _gatewayFactory.Create(provider.ProviderType, apiKey, provider.BaseUrl);
-            result.Add((gateway, provider, candidate.ModelId));
+            return (gateway, provider, candidate.ModelId);
         }
 
-        if (result.Count == 0)
-            throw new InvalidOperationException($"No available candidates for '{virtualModelId}'");
-
-        return result;
+        throw new InvalidOperationException($"No available candidates for '{virtualModelId}'");
     }
 
     /// <summary>
@@ -421,6 +342,9 @@ public sealed class FireBoxAiDispatcher : IFireBoxAiDispatcher
             _logger.LogWarning(ex, "Failed to record usage stats");
         }
     }
+
+    private static FireBoxError CreateProviderError(Exception ex, ProviderConfigEntity provider, string modelId) =>
+        new(FireBoxError.ProviderError, ex.Message, provider.ProviderType, modelId);
 
     private static List<ModelMediaFormat>? ParseFormatsMask(int mask)
     {

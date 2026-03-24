@@ -4,7 +4,7 @@ public sealed class RouteRuleEntity
 {
     public int Id { get; set; }
     public string VirtualModelId { get; set; } = string.Empty;
-    public string Strategy { get; set; } = "Failover"; // "Failover" or "Random"
+    public string Strategy { get; set; } = "Ordered"; // "Ordered" or "Random"
     public string CandidatesJson { get; set; } = "[]"; // JSON: [{ProviderId, ModelId}]
     public bool Reasoning { get; set; }
     public bool ToolCalling { get; set; }

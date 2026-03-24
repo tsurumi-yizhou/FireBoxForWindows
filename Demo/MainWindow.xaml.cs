@@ -14,8 +14,8 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        ConversationNavView.MenuItemsSource = ChatPageView.ViewModel.Conversations;
         ConfigureTitleBar();
-        Activated += MainWindow_Activated;
     }
 
     public void UpdateStatus()
@@ -25,6 +25,7 @@ public sealed partial class MainWindow : Window
             ChatPageView.UpdateClient(null);
             ShowStatus(InfoBarSeverity.Error, "Service connection failed", App.ConnectionError);
             ChatPageView.IsEnabled = false;
+            ConversationNavView.IsEnabled = false;
             NewChatButton.IsEnabled = false;
         }
         else if (App.Client is null)
@@ -32,6 +33,7 @@ public sealed partial class MainWindow : Window
             ChatPageView.UpdateClient(null);
             ShowStatus(InfoBarSeverity.Warning, "Not connected", "FireBox client not initialized.");
             ChatPageView.IsEnabled = false;
+            ConversationNavView.IsEnabled = false;
             NewChatButton.IsEnabled = false;
         }
         else
@@ -40,14 +42,19 @@ public sealed partial class MainWindow : Window
             HideStatus();
             ChatPageView.IsEnabled = true;
             NewChatButton.IsEnabled = true;
-            NewChat();
+            ConversationNavView.IsEnabled = true;
+
+            if (ChatPageView.ViewModel.Conversations.Count == 0)
+                NewChat();
+            else if (ConversationNavView.SelectedItem is null)
+                ConversationNavView.SelectedItem = ChatPageView.ViewModel.Conversations.FirstOrDefault();
         }
     }
 
     public void ShowFatalError(string title, string message)
     {
         ShowStatus(InfoBarSeverity.Error, title, "FireBox Demo ran into an exception.");
-        ConversationList.IsEnabled = false;
+        ConversationNavView.IsEnabled = false;
         ChatPageView.IsEnabled = false;
         NewChatButton.IsEnabled = false;
         Content = CreateErrorView(title, message);
@@ -92,42 +99,26 @@ public sealed partial class MainWindow : Window
     {
         var conversation = new Conversation();
         ChatPageView.ViewModel.AddConversation(conversation);
-        RefreshConversationList();
-        ConversationList.SelectedItem = ConversationList.Items.Cast<Conversation>()
+        ConversationNavView.SelectedItem = ChatPageView.ViewModel.Conversations
             .FirstOrDefault(c => c.Id == conversation.Id);
     }
 
-    private void ConversationList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private void ConversationNavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
-        if (ConversationList.SelectedItem is Conversation conv)
+        if (args.SelectedItem is Conversation conv)
             ChatPageView.ViewModel.SwitchConversation(conv.Id);
     }
 
-    private void DeleteConversation_Click(object sender, RoutedEventArgs e)
+    private void DeleteConversationMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is Button btn && btn.Tag is string id)
+        if (sender is MenuFlyoutItem menuItem && menuItem.Tag is string id)
         {
             ChatPageView.ViewModel.DeleteConversation(id);
-            RefreshConversationList();
 
             if (ChatPageView.ViewModel.Conversations.Count == 0)
                 NewChat();
             else
-                ConversationList.SelectedIndex = 0;
-        }
-    }
-
-    private void RefreshConversationList()
-    {
-        ConversationList.ItemsSource = null;
-        ConversationList.ItemsSource = ChatPageView.ViewModel.Conversations;
-    }
-
-    private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
-    {
-        if (args.WindowActivationState != WindowActivationState.Deactivated)
-        {
-            ChatPageView.ReloadModels();
+                ConversationNavView.SelectedItem = ChatPageView.ViewModel.Conversations.FirstOrDefault();
         }
     }
 

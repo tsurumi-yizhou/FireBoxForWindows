@@ -15,7 +15,7 @@
         Version="1.0.0.0" />
 
     <Properties>
-        <DisplayName>App</DisplayName>
+        <DisplayName>FireBox</DisplayName>
         <PublisherDisplayName>Yizhou</PublisherDisplayName>
         <Logo>Assets\StoreLogo.png</Logo>
     </Properties>
@@ -34,6 +34,11 @@
             Executable="$targetnametoken$.exe"
             EntryPoint="$targetentrypoint$">
             <Extensions>
+                <uap:Extension Category="windows.protocol">
+                    <uap:Protocol Name="firebox">
+                        <uap:DisplayName>FireBox</uap:DisplayName>
+                    </uap:Protocol>
+                </uap:Extension>
                 <!-- Out-of-process COM server: OS auto-launches Service.exe on CoCreateInstance -->
                 <com:Extension Category="windows.comServer">
                     <com:ComServer>
@@ -46,16 +51,16 @@
                 <com:Extension Category="windows.comInterface">
                     <com:ComInterface>
                         <com:Interface Id="e0df9d43-d19e-4125-9c9e-277020a62cb4" UseUniversalMarshaler="true">
-                            <com:TypeLib Id="dc51fb4b-bd5d-4613-8786-e154926b7035" VersionNumber="1.2" />
+                            <com:TypeLib Id="dc51fb4b-bd5d-4613-8786-e154926b7035" VersionNumber="1.4" />
                         </com:Interface>
                         <com:Interface Id="9d611e53-2f5a-4987-870f-e58f58e4a7f2" UseUniversalMarshaler="true">
-                            <com:TypeLib Id="dc51fb4b-bd5d-4613-8786-e154926b7035" VersionNumber="1.2" />
+                            <com:TypeLib Id="dc51fb4b-bd5d-4613-8786-e154926b7035" VersionNumber="1.4" />
                         </com:Interface>
                         <com:Interface Id="a3c7f1d2-8b4e-4f6a-9d1c-5e2b8a0f3c7d" UseUniversalMarshaler="true">
-                            <com:TypeLib Id="dc51fb4b-bd5d-4613-8786-e154926b7035" VersionNumber="1.2" />
+                            <com:TypeLib Id="dc51fb4b-bd5d-4613-8786-e154926b7035" VersionNumber="1.4" />
                         </com:Interface>
                         <com:TypeLib Id="dc51fb4b-bd5d-4613-8786-e154926b7035">
-                            <com:Version VersionNumber="1.2">
+                            <com:Version VersionNumber="1.4">
                                 <com:Win32Path Path="Service\FireBox.tlb" />
                                 <com:Win64Path Path="Service\FireBox.tlb" />
                             </com:Version>
@@ -64,8 +69,8 @@
                 </com:Extension>
             </Extensions>
             <uap:VisualElements
-                DisplayName="App"
-                Description="App"
+                DisplayName="FireBox"
+                Description="FireBox"
                 BackgroundColor="transparent"
                 Square150x150Logo="Assets\Square150x150Logo.png"
                 Square44x44Logo="Assets\Square44x44Logo.png">

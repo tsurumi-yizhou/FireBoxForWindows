@@ -1,6 +1,7 @@
 using System;
 using System.Text;
 using System.Threading.Tasks;
+using Demo.Services;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -14,6 +15,8 @@ public partial class App : Application
 
     public static Client.FireBoxClient Client { get; private set; } = null!;
     public static string? ConnectionError { get; private set; }
+    public static Window? MainWindowInstance { get; private set; }
+    public static ConversationJsonlStore ConversationStore { get; } = new();
 
     public App()
     {
@@ -30,6 +33,7 @@ public partial class App : Application
         {
             ConnectionError = null;
             _window = CreateWindow();
+            MainWindowInstance = _window;
             _window.Activate();
 
             var client = new Client.FireBoxClient();
@@ -107,6 +111,7 @@ public partial class App : Application
             return _window;
 
         _window = new Window { Title = "FireBox Demo" };
+        MainWindowInstance = _window;
         _window.Activate();
         return _window;
     }

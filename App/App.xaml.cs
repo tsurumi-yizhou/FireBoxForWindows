@@ -1,10 +1,12 @@
 using System;
 using System.Text;
 using System.Threading.Tasks;
+using App.Models;
 using App.Services;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.Windows.AppLifecycle;
 
 namespace App;
 
@@ -26,11 +28,12 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
     }
 
-    protected override void OnLaunched(LaunchActivatedEventArgs args)
+    protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
         try
         {
             ConnectionError = null;
+            var bindingActivation = GetProviderBindingActivation();
             _window = CreateWindow();
             _window.Activate();
 
@@ -50,6 +53,8 @@ public partial class App : Application
                 try
                 {
                     mainWindow.UpdateStatus();
+                    if (bindingActivation is not null)
+                        mainWindow.NavigateToProviderBinding(bindingActivation);
                 }
                 catch (Exception ex)
                 {
@@ -202,5 +207,25 @@ public partial class App : Application
         }
 
         return builder.ToString();
+    }
+
+    private static ProviderBindingActivation? GetProviderBindingActivation()
+    {
+        var activationArgs = AppInstance.GetCurrent().GetActivatedEventArgs();
+        if (activationArgs.Kind != ExtendedActivationKind.Protocol)
+            return null;
+
+        if (activationArgs.Data is not Windows.ApplicationModel.Activation.IProtocolActivatedEventArgs protocolArgs || protocolArgs.Uri is null)
+        {
+            return new ProviderBindingActivation(
+                string.Empty,
+                null,
+                "FireBox received a protocol activation, but the payload could not be read.");
+        }
+
+        if (ProviderBindingUriParser.TryParse(protocolArgs.Uri, out var request, out var error))
+            return new ProviderBindingActivation(protocolArgs.Uri.ToString(), request, null);
+
+        return new ProviderBindingActivation(protocolArgs.Uri.ToString(), null, error);
     }
 }

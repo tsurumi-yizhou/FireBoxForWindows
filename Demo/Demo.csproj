@@ -13,25 +13,20 @@
         <EnableMsixTooling>true</EnableMsixTooling>
         <Nullable>enable</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
     </PropertyGroup>
 
-    <ItemGroup Condition="'$(Configuration)' == 'Debug'">
-        <ProjectCapability Include="None" />
-    </ItemGroup>
-
-    <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-        <WindowsPackageType>None</WindowsPackageType>
-        <HasPackageAndPublishMenu>false</HasPackageAndPublishMenu>
-        <PublishReadyToRun>false</PublishReadyToRun>
-        <PublishTrimmed>false</PublishTrimmed>
-    </PropertyGroup>
-
-    <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <ItemGroup>
         <ProjectCapability Include="Msix" />
     </ItemGroup>
 
+    <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+        <PublishReadyToRun>false</PublishReadyToRun>
+        <PublishTrimmed>false</PublishTrimmed>
+        <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    </PropertyGroup>
+
     <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-        <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
         <PublishReadyToRun>true</PublishReadyToRun>
         <PublishTrimmed>false</PublishTrimmed>
     </PropertyGroup>
@@ -39,13 +34,11 @@
     <ItemGroup>
         <Manifest Include="$(ApplicationManifest)" />
 
-        <Content Include="..\App\Assets\**\*">
+        <Content Include="..\App\Assets\**\*" CopyToOutputDirectory="PreserveNewest">
             <Link>Assets\%(RecursiveDir)%(Filename)%(Extension)</Link>
         </Content>
 
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
-        <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls"
-            Version="8.2.251219" />
         <PackageReference Include="CommunityToolkit.WinUI.UI.Controls.Markdown" Version="7.1.2" />
         <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
         <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />

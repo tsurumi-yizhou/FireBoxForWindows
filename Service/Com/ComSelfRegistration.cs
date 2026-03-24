@@ -16,6 +16,7 @@ internal static class ComSelfRegistration
         var exePath = ResolveServerExecutablePath();
         var exeDir = Path.GetDirectoryName(exePath) ?? throw new InvalidOperationException("Unable to resolve executable directory.");
         var tlbPath = Path.Combine(exeDir, "FireBox.tlb");
+        ServiceRuntimeLog.WriteInfo(null, "ComSelfRegistration.RegisterPerUser", $"exePath={exePath}, tlbPath={tlbPath}");
 
         if (!File.Exists(tlbPath))
             throw new FileNotFoundException("Type library not found next to Service.exe. Build Service to generate FireBox.tlb.", tlbPath);
@@ -32,6 +33,7 @@ internal static class ComSelfRegistration
 
     public static void UnregisterPerUser()
     {
+        ServiceRuntimeLog.WriteInfo(null, "ComSelfRegistration.UnregisterPerUser", "Removing HKCU COM registration keys.");
         DeleteSubKeyTree($@"{ClassesRoot}\CLSID\{{{FireBoxGuids.ControlClass}}}");
         DeleteSubKeyTree($@"{ClassesRoot}\CLSID\{{{FireBoxGuids.CapabilityClass}}}");
 
@@ -92,6 +94,7 @@ internal static class ComSelfRegistration
         if (win64Key is null) throw new InvalidOperationException("Failed to create TypeLib win64 key.");
 
         win64Key.SetValue(null, tlbPath, RegistryValueKind.String);
+        ServiceRuntimeLog.WriteInfo(null, "ComSelfRegistration.RegisterTypeLib", $"Registered TypeLib win64 path={tlbPath}");
     }
 
     private static void DeleteSubKeyTree(string subKeyPath)
@@ -100,9 +103,9 @@ internal static class ComSelfRegistration
         {
             Registry.CurrentUser.DeleteSubKeyTree(subKeyPath, throwOnMissingSubKey: false);
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort: ignore failures during cleanup.
+            ServiceRuntimeLog.WriteError(null, "ComSelfRegistration.DeleteSubKeyTree", ex, $"subKeyPath={subKeyPath}");
         }
     }
 

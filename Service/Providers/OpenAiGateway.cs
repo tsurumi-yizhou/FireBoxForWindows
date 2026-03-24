@@ -1,5 +1,6 @@
 using System.ClientModel;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using Core.Models;
 using OpenAI;
 using OpenAI.Chat;
@@ -11,10 +12,12 @@ namespace Service.Providers;
 public sealed class OpenAiGateway : IProviderGateway
 {
     private readonly OpenAIClient _client;
+    private readonly string _baseUrl;
     public string ProviderType => "OpenAI";
 
     public OpenAiGateway(string apiKey, string baseUrl)
     {
+        _baseUrl = baseUrl;
         var options = new OpenAIClientOptions();
         if (!string.IsNullOrEmpty(baseUrl))
             options.Endpoint = new Uri(baseUrl);
@@ -118,8 +121,18 @@ public sealed class OpenAiGateway : IProviderGateway
 
     public async Task<List<string>> ListModelsAsync(CancellationToken ct)
     {
-        var result = await _client.GetOpenAIModelClient().GetModelsAsync(ct);
-        return result.Value.OrderBy(m => m.Id).Select(m => m.Id).ToList();
+        try
+        {
+            var result = await _client.GetOpenAIModelClient().GetModelsAsync(ct);
+            return result.Value.OrderBy(m => m.Id).Select(m => m.Id).ToList();
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException(
+                $"Failed to parse model list from endpoint '{_baseUrl}'. Response is not JSON. " +
+                "For OpenAI-compatible gateways, fill the complete API Base URL including version path (for example /v1 or /v2).",
+                ex);
+        }
     }
 
     private static ChatCompletionOptions BuildOptions(float temperature, int maxOutputTokens)

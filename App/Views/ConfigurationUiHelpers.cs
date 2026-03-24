@@ -31,6 +31,18 @@ internal static class ConfigurationUiHelpers
             Foreground = SecondaryBrush(),
         };
 
+    public static double GetResponsiveDialogWidth(
+        XamlRoot? xamlRoot,
+        double minWidth,
+        double preferredFraction = 0.68,
+        double maxFraction = 0.75,
+        double edgePadding = 96)
+    {
+        var rootWidth = xamlRoot?.Size.Width ?? 1600;
+        var maxWidth = Math.Max(minWidth, Math.Min(rootWidth * maxFraction, rootWidth - edgePadding));
+        return Math.Max(minWidth, Math.Min(rootWidth * preferredFraction, maxWidth));
+    }
+
     public static async Task ShowMessageDialogAsync(XamlRoot xamlRoot, string title, string message)
     {
         await new ContentDialog

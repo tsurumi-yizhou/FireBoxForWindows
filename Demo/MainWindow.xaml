@@ -55,66 +55,52 @@
                  IsClosable="True"
                  Margin="0" />
 
-        <Grid Grid.Row="2">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="260" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-
-            <!-- Sidebar: conversation list -->
-            <Border Grid.Column="0"
-                    Background="{ThemeResource LayerOnAcrylicFillColorDefaultBrush}"
-                    BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                    BorderThickness="0,0,1,0">
-                <Grid RowSpacing="8" Padding="8">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
+        <NavigationView x:Name="ConversationNavView"
+                        Grid.Row="2"
+                        IsBackButtonVisible="Collapsed"
+                        IsSettingsVisible="False"
+                        PaneDisplayMode="Left"
+                        CompactPaneLength="48"
+                        OpenPaneLength="320"
+                        SelectionChanged="ConversationNavView_SelectionChanged">
+            <NavigationView.PaneHeader>
+                <Grid Margin="12,8,12,0">
                     <Button x:Name="NewChatButton"
-                            Grid.Row="0"
-                            Content="New Chat"
-                            HorizontalAlignment="Stretch"
+                            HorizontalAlignment="Right"
+                            Content="&#xE710;"
+                            FontFamily="{ThemeResource SymbolThemeFontFamily}"
+                            ToolTipService.ToolTip="New Chat"
                             Click="NewChat_Click"
                             Style="{ThemeResource AccentButtonStyle}">
                         <Button.KeyboardAccelerators>
                             <KeyboardAccelerator Modifiers="Control" Key="N" />
                         </Button.KeyboardAccelerators>
                     </Button>
-
-                    <ListView x:Name="ConversationList"
-                              Grid.Row="1"
-                              SelectionMode="Single"
-                              SelectionChanged="ConversationList_SelectionChanged">
-                        <ListView.ItemTemplate>
-                            <DataTemplate>
-                                <Grid Padding="4" ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                    <Button Grid.Column="1" Content="&#xE74D;"
-                                            FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="12"
-                                            Padding="4" MinWidth="0" MinHeight="0"
-                                            Click="DeleteConversation_Click"
-                                            Tag="{Binding Id}" />
-                                </Grid>
-                            </DataTemplate>
-                        </ListView.ItemTemplate>
-                        <ListView.ItemContainerStyle>
-                            <Style TargetType="ListViewItem">
-                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                <Setter Property="Padding" Value="4" />
-                            </Style>
-                        </ListView.ItemContainerStyle>
-                    </ListView>
                 </Grid>
-            </Border>
+            </NavigationView.PaneHeader>
 
-            <!-- Right: chat page -->
-            <views:ChatPage x:Name="ChatPageView" Grid.Column="1" />
-        </Grid>
+            <NavigationView.MenuItemTemplate>
+                <DataTemplate>
+                    <Grid MinHeight="40"
+                          Padding="0,0,8,0">
+                        <Grid.ContextFlyout>
+                            <MenuFlyout>
+                                <MenuFlyoutItem Text="Delete"
+                                                Icon="Delete"
+                                                Click="DeleteConversationMenuItem_Click"
+                                                Tag="{Binding Id}" />
+                            </MenuFlyout>
+                        </Grid.ContextFlyout>
+
+                        <TextBlock
+                                   Text="{Binding Title}"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" />
+                    </Grid>
+                </DataTemplate>
+            </NavigationView.MenuItemTemplate>
+
+            <views:ChatPage x:Name="ChatPageView" />
+        </NavigationView>
     </Grid>
 </Window>

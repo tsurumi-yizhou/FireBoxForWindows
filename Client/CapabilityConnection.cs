@@ -27,7 +27,7 @@ public sealed class CapabilityConnection : IDisposable
         var clsid = Guid.Parse(FireBoxGuids.CapabilityClass);
         var iid = Guid.Parse(FireBoxGuids.CapabilityInterface);
 
-        var hr = RetryCreateInstance(ref clsid, ref iid, out var ppv);
+        var hr = TryCreateInstance(ref clsid, ref iid, out var ppv);
 
         if (hr < 0)
             throw new InvalidOperationException(
@@ -72,23 +72,6 @@ public sealed class CapabilityConnection : IDisposable
 
     private static int TryCreateInstance(ref Guid clsid, ref Guid iid, out IntPtr ppv) =>
         Ole32.CoCreateInstance(ref clsid, IntPtr.Zero, Ole32.CLSCTX_LOCAL_SERVER, ref iid, out ppv);
-
-    private static int RetryCreateInstance(ref Guid clsid, ref Guid iid, out IntPtr ppv)
-    {
-        var hr = unchecked((int)0x80040154);
-        ppv = IntPtr.Zero;
-
-        for (var i = 0; i < 12; i++)
-        {
-            hr = TryCreateInstance(ref clsid, ref iid, out ppv);
-            if (hr >= 0)
-                return hr;
-
-            Thread.Sleep(250);
-        }
-
-        return hr;
-    }
 }
 
 file static class Ole32

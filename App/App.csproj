@@ -4,6 +4,7 @@
         <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
         <TargetPlatformMinVersion>10.0.26100.0</TargetPlatformMinVersion>
         <RootNamespace>App</RootNamespace>
+        <ApplicationIcon>Assets\FireBox.ico</ApplicationIcon>
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <Platforms>x64</Platforms>
         <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
@@ -13,25 +14,20 @@
         <EnableMsixTooling>true</EnableMsixTooling>
         <Nullable>enable</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
     </PropertyGroup>
 
-    <ItemGroup Condition="'$(Configuration)' == 'Debug'">
-        <ProjectCapability Include="None" />
-    </ItemGroup>
-
-    <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-        <WindowsPackageType>None</WindowsPackageType>
-        <HasPackageAndPublishMenu>false</HasPackageAndPublishMenu>
-        <PublishReadyToRun>false</PublishReadyToRun>
-        <PublishTrimmed>false</PublishTrimmed>
-    </PropertyGroup>
-
-    <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <ItemGroup>
         <ProjectCapability Include="Msix" />
     </ItemGroup>
 
+    <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+        <PublishReadyToRun>false</PublishReadyToRun>
+        <PublishTrimmed>false</PublishTrimmed>
+        <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    </PropertyGroup>
+
     <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-        <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
         <PublishReadyToRun>true</PublishReadyToRun>
         <PublishTrimmed>false</PublishTrimmed>
         <TieredPGO>true</TieredPGO>
@@ -42,7 +38,7 @@
         <Manifest Include="$(ApplicationManifest)" />
 
         <None Remove="Assets\**\*" />
-        <Content Include="Assets\**\*" />
+        <Content Include="Assets\**\*" CopyToOutputDirectory="PreserveNewest" />
 
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
         <PackageReference Include="CommunityToolkit.WinUI.Animations" Version="8.2.251219" />
@@ -78,34 +74,13 @@
     </ItemGroup>
 
     <PropertyGroup>
+        <ServiceBuildDir>$(MSBuildThisFileDirectory)..\Service\bin\$(Platform)\$(Configuration)\$(TargetFramework)\</ServiceBuildDir>
         <ServicePublishDir>$(MSBuildThisFileDirectory)obj\service-publish\</ServicePublishDir>
+        <ServiceLooseFileDir>$(MSBuildThisFileDirectory)bin\$(Platform)\$(Configuration)\$(TargetFramework)\$(RuntimeIdentifiers)\Service\</ServiceLooseFileDir>
     </PropertyGroup>
 
-    <!-- Debug: build Service and copy to $(OutDir)Service\ so App can discover it at runtime -->
-    <Target Name="BuildAndCopyService"
-        Condition="'$(Configuration)' == 'Debug'"
-        AfterTargets="Build">
-        <MSBuild Projects="..\\Service\\Service.csproj"
-            Targets="Build"
-            Properties="Configuration=$(Configuration);Platform=$(Platform)" />
-
-        <PropertyGroup>
-            <_ServiceBinDir>
-                $(MSBuildThisFileDirectory)..\\Service\\bin\\$(Platform)\\$(Configuration)\\$(TargetFramework)\\</_ServiceBinDir>
-        </PropertyGroup>
-
-        <ItemGroup>
-            <_ServiceFiles Include="$(_ServiceBinDir)**\*" Exclude="$(_ServiceBinDir)**\*.pdb" />
-        </ItemGroup>
-
-        <Copy SourceFiles="@(_ServiceFiles)"
-            DestinationFolder="$(OutDir)Service\%(RecursiveDir)"
-            SkipUnchangedFiles="true" />
-    </Target>
-
-    <!-- Release: publish Service into MSIX package under Service\ -->
+    <!-- MSIX: include desktop manifest schema -->
     <Target Name="AddDesktopManifestSchema"
-        Condition="'$(Configuration)' == 'Release'"
         AfterTargets="_GetAppxManifestSchemaItems">
         <ItemGroup
             Condition="Exists('$(WindowsSdkDir)Include\\$(TargetPlatformVersion)\\winrt\\DesktopManifestSchema.xsd')">
@@ -117,6 +92,53 @@
         </ItemGroup>
     </Target>
 
+    <Target Name="BuildServiceProject"
+        Condition="'$(Configuration)' == 'Debug'">
+        <MSBuild Projects="..\\Service\\Service.csproj"
+            Targets="Build"
+            Properties="Configuration=$(Configuration);Platform=$(Platform)" />
+    </Target>
+
+    <!-- Debug: stage Service into the loose-file layout used by Add-AppPackage -Register -->
+    <Target Name="BuildAndCopyServiceForLooseFileRegistration"
+        Condition="'$(Configuration)' == 'Debug'"
+        AfterTargets="Build"
+        DependsOnTargets="BuildServiceProject">
+        <ItemGroup>
+            <_ServiceBuildFiles Include="$(ServiceBuildDir)**\*"
+                Exclude="$(ServiceBuildDir)**\*.pdb" />
+            <_ServiceLooseFileDirectories Include="@(_ServiceBuildFiles->'$(ServiceLooseFileDir)%(RecursiveDir)')" />
+        </ItemGroup>
+
+        <MakeDir Directories="@(_ServiceLooseFileDirectories)" />
+
+        <Copy
+            SourceFiles="@(_ServiceBuildFiles)"
+            DestinationFiles="@(_ServiceBuildFiles->'$(ServiceLooseFileDir)%(RecursiveDir)%(Filename)%(Extension)')"
+            SkipUnchangedFiles="true" />
+    </Target>
+
+    <!-- Debug: quick Build of Service, copy into MSIX payload -->
+    <Target Name="BuildAndIncludeService"
+        Condition="'$(Configuration)' == 'Debug'"
+        AfterTargets="GetPackagingOutputs"
+        BeforeTargets="_ComputeAppxPackagePayload"
+        DependsOnTargets="BuildServiceProject">
+
+        <ItemGroup>
+            <_ServiceBuildFiles Include="$(ServiceBuildDir)**\*"
+                Exclude="$(ServiceBuildDir)**\*.pdb" />
+        </ItemGroup>
+
+        <ItemGroup>
+            <PackagingOutputs Include="@(_ServiceBuildFiles)">
+                <OutputGroup>ServicePayload</OutputGroup>
+                <TargetPath>Service\%(RecursiveDir)%(Filename)%(Extension)</TargetPath>
+            </PackagingOutputs>
+        </ItemGroup>
+    </Target>
+
+    <!-- Release: optimized Publish of Service, include in MSIX payload -->
     <Target Name="PublishAndIncludeService"
         Condition="'$(Configuration)' == 'Release'"
         AfterTargets="GetPackagingOutputs"

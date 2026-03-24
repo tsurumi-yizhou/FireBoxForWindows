@@ -23,53 +23,88 @@ public partial class FireBoxControlClass : IFireBoxControl
         (ServiceProvider ?? throw new InvalidOperationException("Service not initialized."))
             .GetRequiredService<T>();
 
-    public string Ping(string message) => $"Pong: {message}";
+    private IFireBoxConfigManager ResolveConfig() => Resolve<IFireBoxConfigManager>();
 
-    public void Shutdown() => _lifetime.StopApplication();
+    private T Execute<T>(string operation, string? details, Func<IFireBoxConfigManager, T> action)
+    {
+        try
+        {
+            ServiceRuntimeLog.WriteInfo(ServiceProvider, $"Control.{operation}", details ?? string.Empty);
+            return action(ResolveConfig());
+        }
+        catch (Exception ex)
+        {
+            ServiceRuntimeLog.WriteError(ServiceProvider, $"Control.{operation}", ex, details);
+            throw;
+        }
+    }
+
+    private void Execute(string operation, string? details, Action<IFireBoxConfigManager> action)
+    {
+        Execute<object?>(operation, details, manager =>
+        {
+            action(manager);
+            return null;
+        });
+    }
+
+    public string Ping(string message)
+    {
+        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Control.Ping", $"message={message}");
+        return $"Pong: {message}";
+    }
+
+    public void Shutdown()
+    {
+        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Control.Shutdown", "Shutdown requested.");
+        _lifetime.StopApplication();
+    }
 
     public string GetDailyStats(int year, int month, int day) =>
-        Resolve<IFireBoxConfigManager>().GetDailyStats(year, month, day);
+        Execute("GetDailyStats", $"date={year:D4}-{month:D2}-{day:D2}", manager => manager.GetDailyStats(year, month, day));
 
     public string GetMonthlyStats(int year, int month) =>
-        Resolve<IFireBoxConfigManager>().GetMonthlyStats(year, month);
+        Execute("GetMonthlyStats", $"month={year:D4}-{month:D2}", manager => manager.GetMonthlyStats(year, month));
 
     public string ListProviders() =>
-        Resolve<IFireBoxConfigManager>().ListProviders();
+        Execute("ListProviders", null, manager => manager.ListProviders());
 
     public int AddProvider(string providerType, string name, string baseUrl, string apiKey) =>
-        Resolve<IFireBoxConfigManager>().AddProvider(providerType, name, baseUrl, apiKey);
+        Execute("AddProvider", $"providerType={providerType}, name={name}, baseUrl={(string.IsNullOrWhiteSpace(baseUrl) ? "<default>" : baseUrl)}", manager =>
+            manager.AddProvider(providerType, name, baseUrl, apiKey));
 
     public void UpdateProvider(int providerId, string name, string baseUrl, string apiKey, string enabledModelIdsJson, int isEnabled) =>
-        Resolve<IFireBoxConfigManager>().UpdateProvider(providerId, name, baseUrl, apiKey, enabledModelIdsJson, isEnabled != 0);
+        Execute("UpdateProvider", $"providerId={providerId}, name={name}, baseUrl={baseUrl}, apiKeyProvided={!string.IsNullOrWhiteSpace(apiKey)}, enabledModelIdsJsonLength={enabledModelIdsJson?.Length ?? 0}, isEnabled={isEnabled}", manager =>
+            manager.UpdateProvider(providerId, name, baseUrl, apiKey, enabledModelIdsJson ?? string.Empty, isEnabled != 0));
 
     public void DeleteProvider(int providerId) =>
-        Resolve<IFireBoxConfigManager>().DeleteProvider(providerId);
+        Execute("DeleteProvider", $"providerId={providerId}", manager => manager.DeleteProvider(providerId));
 
     public string FetchProviderModels(int providerId) =>
-        Resolve<IFireBoxConfigManager>().FetchProviderModels(providerId);
+        Execute("FetchProviderModels", $"providerId={providerId}", manager => manager.FetchProviderModels(providerId));
 
     public string ListRoutes() =>
-        Resolve<IFireBoxConfigManager>().ListRoutes();
+        Execute("ListRoutes", null, manager => manager.ListRoutes());
 
     public int AddRoute(string virtualModelId, string strategy, string candidatesJson,
         int reasoning, int toolCalling, int inputFormatsMask, int outputFormatsMask) =>
-        Resolve<IFireBoxConfigManager>().AddRoute(virtualModelId, strategy, candidatesJson,
-            reasoning != 0, toolCalling != 0, inputFormatsMask, outputFormatsMask);
+        Execute("AddRoute", $"virtualModelId={virtualModelId}, strategy={strategy}, candidatesJsonLength={candidatesJson?.Length ?? 0}, reasoning={reasoning}, toolCalling={toolCalling}, inputFormatsMask={inputFormatsMask}, outputFormatsMask={outputFormatsMask}", manager =>
+            manager.AddRoute(virtualModelId, strategy, candidatesJson ?? "[]", reasoning != 0, toolCalling != 0, inputFormatsMask, outputFormatsMask));
 
     public void UpdateRoute(int routeId, string virtualModelId, string strategy, string candidatesJson,
         int reasoning, int toolCalling, int inputFormatsMask, int outputFormatsMask) =>
-        Resolve<IFireBoxConfigManager>().UpdateRoute(routeId, virtualModelId, strategy, candidatesJson,
-            reasoning != 0, toolCalling != 0, inputFormatsMask, outputFormatsMask);
+        Execute("UpdateRoute", $"routeId={routeId}, virtualModelId={virtualModelId}, strategy={strategy}, candidatesJsonLength={candidatesJson?.Length ?? 0}, reasoning={reasoning}, toolCalling={toolCalling}, inputFormatsMask={inputFormatsMask}, outputFormatsMask={outputFormatsMask}", manager =>
+            manager.UpdateRoute(routeId, virtualModelId, strategy, candidatesJson ?? "[]", reasoning != 0, toolCalling != 0, inputFormatsMask, outputFormatsMask));
 
     public void DeleteRoute(int routeId) =>
-        Resolve<IFireBoxConfigManager>().DeleteRoute(routeId);
+        Execute("DeleteRoute", $"routeId={routeId}", manager => manager.DeleteRoute(routeId));
 
     public string ListConnections() =>
-        Resolve<IFireBoxConfigManager>().ListConnections();
+        Execute("ListConnections", null, manager => manager.ListConnections());
 
     public string ListClientAccess() =>
-        Resolve<IFireBoxConfigManager>().ListClientAccess();
+        Execute("ListClientAccess", null, manager => manager.ListClientAccess());
 
     public void UpdateClientAccessAllowed(int accessId, int isAllowed) =>
-        Resolve<IFireBoxConfigManager>().UpdateClientAccessAllowed(accessId, isAllowed != 0);
+        Execute("UpdateClientAccessAllowed", $"accessId={accessId}, isAllowed={isAllowed}", manager => manager.UpdateClientAccessAllowed(accessId, isAllowed != 0));
 }

@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using Core.Com;
 using Core.Configuration;
 using Core.Dispatch;
 using Service.Data;
@@ -43,31 +44,36 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
     }
 
     public int AddProvider(string providerType, string name, string baseUrl, string apiKey) =>
-        _configRepo.AddProviderAsync(providerType, name, baseUrl, apiKey).GetAwaiter().GetResult();
+        Execute("AddProvider", $"providerType={providerType}, name={name}, baseUrl={(string.IsNullOrWhiteSpace(baseUrl) ? "<default>" : baseUrl)}", () =>
+            _configRepo.AddProviderAsync(providerType, name, baseUrl, apiKey).GetAwaiter().GetResult());
 
     public void UpdateProvider(int id, string name, string baseUrl, string apiKey, string enabledModelIdsJson, bool isEnabled)
     {
         var enabledModelIds = string.IsNullOrEmpty(enabledModelIdsJson)
             ? null
             : JsonSerializer.Deserialize<List<string>>(enabledModelIdsJson);
-        _configRepo.UpdateProviderAsync(id,
-            string.IsNullOrEmpty(name) ? null : name,
-            string.IsNullOrEmpty(baseUrl) ? null : baseUrl,
-            string.IsNullOrEmpty(apiKey) ? null : apiKey,
-            enabledModelIds,
-            isEnabled).GetAwaiter().GetResult();
+        Execute("UpdateProvider", $"id={id}, name={name}, baseUrl={baseUrl}, apiKeyProvided={!string.IsNullOrWhiteSpace(apiKey)}, enabledModelCount={enabledModelIds?.Count ?? 0}, isEnabled={isEnabled}", () =>
+            _configRepo.UpdateProviderAsync(id,
+                string.IsNullOrEmpty(name) ? null : name,
+                string.IsNullOrEmpty(baseUrl) ? null : baseUrl,
+                string.IsNullOrEmpty(apiKey) ? null : apiKey,
+                enabledModelIds,
+                isEnabled).GetAwaiter().GetResult());
     }
 
     public void DeleteProvider(int id) =>
-        _configRepo.DeleteProviderAsync(id).GetAwaiter().GetResult();
+        Execute("DeleteProvider", $"id={id}", () => _configRepo.DeleteProviderAsync(id).GetAwaiter().GetResult());
 
     public string FetchProviderModels(int providerId)
     {
-        var provider = _configRepo.GetProviderAsync(providerId).GetAwaiter().GetResult()
-            ?? throw new KeyNotFoundException($"Provider {providerId} not found.");
-        var models = _modelFetcher.FetchModelsAsync(provider.ProviderType, provider.BaseUrl, provider.EncryptedApiKey)
-            .GetAwaiter().GetResult();
-        return JsonSerializer.Serialize(models);
+        return Execute("FetchProviderModels", $"providerId={providerId}", () =>
+        {
+            var provider = _configRepo.GetProviderAsync(providerId).GetAwaiter().GetResult()
+                ?? throw new KeyNotFoundException($"Provider {providerId} not found.");
+            var models = _modelFetcher.FetchModelsAsync(provider.ProviderType, provider.BaseUrl, provider.EncryptedApiKey)
+                .GetAwaiter().GetResult();
+            return JsonSerializer.Serialize(models);
+        });
     }
 
     public string ListRoutes()
@@ -75,7 +81,7 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
         var routes = _configRepo.ListRoutesAsync().GetAwaiter().GetResult();
         return JsonSerializer.Serialize(routes.Select(r => new
         {
-            r.Id, r.VirtualModelId, r.Strategy,
+            r.Id, r.VirtualModelId, Strategy = NormalizeRouteStrategy(r.Strategy),
             Candidates = _configRepo.GetCandidates(r),
             r.Reasoning, r.ToolCalling,
             r.InputFormatsMask, r.OutputFormatsMask,
@@ -85,33 +91,35 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
 
     public int AddRoute(string virtualModelId, string strategy, string candidatesJson,
         bool reasoning, bool toolCalling, int inputFormatsMask, int outputFormatsMask) =>
-        _configRepo.AddRouteAsync(new RouteRuleEntity
-        {
-            VirtualModelId = virtualModelId,
-            Strategy = strategy,
-            CandidatesJson = candidatesJson,
-            Reasoning = reasoning,
-            ToolCalling = toolCalling,
-            InputFormatsMask = inputFormatsMask,
-            OutputFormatsMask = outputFormatsMask,
-        }).GetAwaiter().GetResult();
+        Execute("AddRoute", $"virtualModelId={virtualModelId}, strategy={strategy}, candidatesJsonLength={candidatesJson?.Length ?? 0}, reasoning={reasoning}, toolCalling={toolCalling}, inputFormatsMask={inputFormatsMask}, outputFormatsMask={outputFormatsMask}", () =>
+            _configRepo.AddRouteAsync(new RouteRuleEntity
+            {
+                VirtualModelId = virtualModelId,
+                Strategy = NormalizeRouteStrategy(strategy),
+                CandidatesJson = candidatesJson ?? "[]",
+                Reasoning = reasoning,
+                ToolCalling = toolCalling,
+                InputFormatsMask = inputFormatsMask,
+                OutputFormatsMask = outputFormatsMask,
+            }).GetAwaiter().GetResult());
 
     public void UpdateRoute(int id, string virtualModelId, string strategy, string candidatesJson,
         bool reasoning, bool toolCalling, int inputFormatsMask, int outputFormatsMask) =>
-        _configRepo.UpdateRouteAsync(new RouteRuleEntity
-        {
-            Id = id,
-            VirtualModelId = virtualModelId,
-            Strategy = strategy,
-            CandidatesJson = candidatesJson,
-            Reasoning = reasoning,
-            ToolCalling = toolCalling,
-            InputFormatsMask = inputFormatsMask,
-            OutputFormatsMask = outputFormatsMask,
-        }).GetAwaiter().GetResult();
+        Execute("UpdateRoute", $"id={id}, virtualModelId={virtualModelId}, strategy={strategy}, candidatesJsonLength={candidatesJson?.Length ?? 0}, reasoning={reasoning}, toolCalling={toolCalling}, inputFormatsMask={inputFormatsMask}, outputFormatsMask={outputFormatsMask}", () =>
+            _configRepo.UpdateRouteAsync(new RouteRuleEntity
+            {
+                Id = id,
+                VirtualModelId = virtualModelId,
+                Strategy = NormalizeRouteStrategy(strategy),
+                CandidatesJson = candidatesJson ?? "[]",
+                Reasoning = reasoning,
+                ToolCalling = toolCalling,
+                InputFormatsMask = inputFormatsMask,
+                OutputFormatsMask = outputFormatsMask,
+            }).GetAwaiter().GetResult());
 
     public void DeleteRoute(int id) =>
-        _configRepo.DeleteRouteAsync(id).GetAwaiter().GetResult();
+        Execute("DeleteRoute", $"id={id}", () => _configRepo.DeleteRouteAsync(id).GetAwaiter().GetResult());
 
     public string GetDailyStats(int year, int month, int day)
     {
@@ -142,7 +150,8 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
     }
 
     public void UpdateClientAccessAllowed(int accessId, bool isAllowed) =>
-        _configRepo.UpdateClientAccessAllowedAsync(accessId, isAllowed).GetAwaiter().GetResult();
+        Execute("UpdateClientAccessAllowed", $"accessId={accessId}, isAllowed={isAllowed}", () =>
+            _configRepo.UpdateClientAccessAllowedAsync(accessId, isAllowed).GetAwaiter().GetResult());
 
     public long RegisterConnection(int processId, string processName, string executablePath) =>
         _connections.RegisterConnection(processId, processName, executablePath);
@@ -185,6 +194,7 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
         var approved = User32.ShowYesNoMessageBox(title, message);
         if (!approved)
         {
+            ServiceRuntimeLog.WriteInfo(null, "ConfigManager.ClientApproval", $"DENY process={processName}, path={pathText}");
             _configRepo.SetClientAccessDecisionAsync(
                 processName,
                 executablePath,
@@ -193,6 +203,7 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
             return false;
         }
 
+        ServiceRuntimeLog.WriteInfo(null, "ConfigManager.ClientApproval", $"ALLOW process={processName}, path={pathText}");
         _configRepo.SetClientAccessDecisionAsync(
             processName,
             executablePath,
@@ -201,8 +212,34 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
         return true;
     }
 
+    private static string NormalizeRouteStrategy(string? strategy) =>
+        string.Equals(strategy, "Random", StringComparison.OrdinalIgnoreCase) ? "Random" : "Ordered";
+
     public void SetConnectionStreamState(long connectionId, bool hasActiveStream) =>
         _connections.SetStreamState(connectionId, hasActiveStream);
+
+    private T Execute<T>(string operation, string details, Func<T> action)
+    {
+        try
+        {
+            ServiceRuntimeLog.WriteInfo(null, $"ConfigManager.{operation}", details);
+            return action();
+        }
+        catch (Exception ex)
+        {
+            ServiceRuntimeLog.WriteError(null, $"ConfigManager.{operation}", ex, details);
+            throw;
+        }
+    }
+
+    private void Execute(string operation, string details, Action action)
+    {
+        Execute<object?>(operation, details, () =>
+        {
+            action();
+            return null;
+        });
+    }
 }
 
 internal static class User32

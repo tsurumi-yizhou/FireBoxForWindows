@@ -9,8 +9,9 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Core.Models;
 using Demo.Models;
-using Microsoft.UI.Xaml.Controls;
+using Demo.Services;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml.Controls;
 
 namespace Demo.ViewModels;
 
@@ -19,15 +20,14 @@ namespace Demo.ViewModels;
 public partial class ChatViewModel : ObservableObject
 {
     private Client.FireBoxClient? _client;
+    private readonly ConversationJsonlStore _conversationStore;
     private readonly DispatcherQueue _dispatcherQueue;
     private long _messageIdCounter;
     private CancellationTokenSource? _streamCts;
-
-    // --- Multi-conversation ---
-    private readonly List<Conversation> _conversations = [];
+    private readonly Dictionary<string, VirtualModelInfo> _modelsById = new(StringComparer.OrdinalIgnoreCase);
     private Conversation? _activeConversation;
 
-    public IReadOnlyList<Conversation> Conversations => _conversations;
+    public ObservableCollection<Conversation> Conversations { get; } = [];
 
     public ObservableCollection<ChatUiMessage> Messages { get; } = [];
 
@@ -52,18 +52,49 @@ public partial class ChatViewModel : ObservableObject
     [ObservableProperty]
     private ObservableCollection<string> _availableModels = [];
 
+    [ObservableProperty]
+    private bool _hasPendingAttachments;
+
     public bool IsConnected => _client is not null;
 
     public bool CanSend =>
-        !string.IsNullOrWhiteSpace(InputText)
+        (!string.IsNullOrWhiteSpace(InputText) || HasPendingAttachments)
         && !string.IsNullOrWhiteSpace(SelectedModelId)
         && !IsStreaming
         && IsConnected;
 
-    public ChatViewModel(Client.FireBoxClient? client, DispatcherQueue dispatcherQueue)
+    public bool SupportsImageInput => SupportsInputFormat(ModelMediaFormat.Image);
+    public bool SupportsVideoInput => SupportsInputFormat(ModelMediaFormat.Video);
+    public bool SupportsAudioInput => SupportsInputFormat(ModelMediaFormat.Audio);
+    public bool SupportsAnyAttachmentInput => SupportsImageInput || SupportsVideoInput || SupportsAudioInput;
+
+    public string SelectedModelInputFormatsLabel
+    {
+        get
+        {
+            var formats = GetSelectedInputFormats();
+            if (formats.Count == 0)
+                return "Text only";
+
+            return string.Join(", ", formats.Select(static format => format switch
+            {
+                ModelMediaFormat.Image => "Image",
+                ModelMediaFormat.Video => "Video",
+                ModelMediaFormat.Audio => "Audio",
+                _ => format.ToString(),
+            }));
+        }
+    }
+
+    public ChatViewModel(
+        Client.FireBoxClient? client,
+        ConversationJsonlStore conversationStore,
+        DispatcherQueue dispatcherQueue)
     {
         _client = client;
+        _conversationStore = conversationStore;
         _dispatcherQueue = dispatcherQueue;
+        LoadPersistedConversations();
     }
 
     public void SetClient(Client.FireBoxClient? client)
@@ -74,13 +105,26 @@ public partial class ChatViewModel : ObservableObject
     }
 
     partial void OnInputTextChanged(string value) => OnPropertyChanged(nameof(CanSend));
-    partial void OnSelectedModelIdChanged(string value) => OnPropertyChanged(nameof(CanSend));
+
+    partial void OnSelectedModelIdChanged(string value)
+    {
+        OnPropertyChanged(nameof(CanSend));
+        OnPropertyChanged(nameof(SupportsImageInput));
+        OnPropertyChanged(nameof(SupportsVideoInput));
+        OnPropertyChanged(nameof(SupportsAudioInput));
+        OnPropertyChanged(nameof(SupportsAnyAttachmentInput));
+        OnPropertyChanged(nameof(SelectedModelInputFormatsLabel));
+    }
+
     partial void OnIsStreamingChanged(bool value) => OnPropertyChanged(nameof(CanSend));
+    partial void OnHasPendingAttachmentsChanged(bool value) => OnPropertyChanged(nameof(CanSend));
 
     public void LoadModels()
     {
         if (_client is null)
         {
+            _modelsById.Clear();
+            SelectedModelId = string.Empty;
             Error = "Service not connected.";
             SetFeedback(InfoBarSeverity.Warning, Error);
             return;
@@ -90,9 +134,13 @@ public partial class ChatViewModel : ObservableObject
         {
             var previousSelection = SelectedModelId;
             var models = _client.ListModels();
+            _modelsById.Clear();
             AvailableModels.Clear();
-            foreach (var m in models)
-                AvailableModels.Add(m.VirtualModelId);
+            foreach (var model in models)
+            {
+                AvailableModels.Add(model.VirtualModelId);
+                _modelsById[model.VirtualModelId] = model;
+            }
 
             if (AvailableModels.Count == 0)
             {
@@ -104,42 +152,63 @@ public partial class ChatViewModel : ObservableObject
 
             Error = null;
             SetFeedback(InfoBarSeverity.Success, $"Loaded {AvailableModels.Count} virtual model{(AvailableModels.Count == 1 ? string.Empty : "s")}.");
-            if (!string.IsNullOrWhiteSpace(previousSelection) &&
-                AvailableModels.Contains(previousSelection))
-            {
+            if (!string.IsNullOrWhiteSpace(previousSelection) && AvailableModels.Contains(previousSelection))
                 SelectedModelId = previousSelection;
-            }
             else
-            {
                 SelectedModelId = AvailableModels[0];
-            }
         }
         catch (Exception ex)
         {
+            _modelsById.Clear();
             SelectedModelId = string.Empty;
             Error = BuildFriendlyError(ex, "Load models");
             SetFeedback(InfoBarSeverity.Error, Error);
         }
     }
 
-    // --- Conversation management ---
+    public void SetPendingAttachmentsCount(int count)
+    {
+        HasPendingAttachments = count > 0;
+    }
+
+    public void ReportFeedback(InfoBarSeverity severity, string? message)
+    {
+        SetFeedback(severity, message);
+    }
+
+    public bool SupportsInputFormat(ModelMediaFormat format)
+    {
+        if (!_modelsById.TryGetValue(SelectedModelId, out var model))
+            return false;
+
+        return model.Capabilities.InputFormats?.Contains(format) == true;
+    }
+
+    public IReadOnlyList<ModelMediaFormat> GetSelectedInputFormats()
+    {
+        if (!_modelsById.TryGetValue(SelectedModelId, out var model))
+            return [];
+
+        return model.Capabilities.InputFormats ?? [];
+    }
 
     public Conversation AddConversation(Conversation conv)
     {
-        _conversations.Add(conv);
+        TouchConversation(conv, persist: false);
+        Conversations.Insert(0, conv);
+        _conversationStore.SaveConversation(conv);
         return conv;
     }
 
     public void SwitchConversation(string id)
     {
-        // Save current messages
         if (_activeConversation is not null)
         {
             _activeConversation.Messages.Clear();
             _activeConversation.Messages.AddRange(Messages);
         }
 
-        _activeConversation = _conversations.FirstOrDefault(c => c.Id == id);
+        _activeConversation = Conversations.FirstOrDefault(c => c.Id == id);
         Messages.Clear();
         if (_activeConversation is not null)
         {
@@ -151,9 +220,10 @@ public partial class ChatViewModel : ObservableObject
 
     public void DeleteConversation(string id)
     {
-        var conv = _conversations.FirstOrDefault(c => c.Id == id);
+        var conv = Conversations.FirstOrDefault(c => c.Id == id);
         if (conv is null) return;
-        _conversations.Remove(conv);
+        Conversations.Remove(conv);
+        _conversationStore.DeleteConversation(conv);
         if (_activeConversation?.Id == id)
         {
             _activeConversation = null;
@@ -161,16 +231,22 @@ public partial class ChatViewModel : ObservableObject
         }
     }
 
-    // --- Send ---
-
     [RelayCommand]
     private async Task SendAsync()
+    {
+        await SendWithAttachmentsAsync(null);
+    }
+
+    public async Task SendWithAttachmentsAsync(List<ChatAttachment>? attachments)
     {
         if (!CanSend || _client is null) return;
 
         Error = null;
         FeedbackMessage = null;
+        List<ChatAttachment>? inputAttachments = attachments is { Count: > 0 } ? attachments.ToList() : null;
         var userText = InputText.Trim();
+        if (string.IsNullOrWhiteSpace(userText) && inputAttachments is { Count: > 0 })
+            userText = $"[Attached {inputAttachments.Count} file{(inputAttachments.Count == 1 ? string.Empty : "s")}]";
         InputText = string.Empty;
 
         var userMsg = new ChatUiMessage
@@ -178,12 +254,16 @@ public partial class ChatViewModel : ObservableObject
             Id = Interlocked.Increment(ref _messageIdCounter),
             Role = "user",
             Content = userText,
+            Attachments = inputAttachments,
         };
         Messages.Add(userMsg);
+        PersistActiveConversation();
 
-        // Auto-title conversation
         if (_activeConversation is not null && _activeConversation.Title == "New Chat")
+        {
             _activeConversation.Title = userText.Length > 30 ? userText[..30] + "..." : userText;
+            PersistActiveConversation();
+        }
 
         var assistantMsg = new ChatUiMessage
         {
@@ -195,10 +275,13 @@ public partial class ChatViewModel : ObservableObject
 
         IsStreaming = true;
         _streamCts = new CancellationTokenSource();
-        var request = new ChatCompletionRequest(SelectedModelId, Messages
-            .Where(m => m.Role is "user" or "assistant" or "system" && !string.IsNullOrEmpty(m.Content))
-            .Select(m => new ChatMessage(m.Role, m.Content))
-            .ToList());
+        var request = new ChatCompletionRequest(
+            SelectedModelId,
+            Messages
+                .Where(static m => (m.Role is "user" or "assistant" or "system")
+                    && (!string.IsNullOrEmpty(m.Content) || m.Attachments is { Count: > 0 }))
+                .Select(m => new ChatMessage(m.Role, m.Content, m.Attachments))
+                .ToList());
 
         try
         {
@@ -210,7 +293,6 @@ public partial class ChatViewModel : ObservableObject
                     {
                         case ChatStreamEventType.Delta:
                             assistantMsg.Content += evt.DeltaText;
-                            RefreshMessage(assistantMsg);
                             break;
                         case ChatStreamEventType.ReasoningDelta:
                             assistantMsg.ReasoningContent = (assistantMsg.ReasoningContent ?? "") + evt.ReasoningText;
@@ -220,7 +302,7 @@ public partial class ChatViewModel : ObservableObject
                             if (evt.Response is not null)
                                 assistantMsg.Content = evt.Response.Message.Content;
                             SetFeedback(InfoBarSeverity.Success, "Response completed.");
-                            RefreshMessage(assistantMsg);
+                            PersistActiveConversation();
                             break;
                         case ChatStreamEventType.Error:
                             var streamError = evt.Error?.Message ?? "Unknown error";
@@ -229,13 +311,13 @@ public partial class ChatViewModel : ObservableObject
                             Error = streamError;
                             SetFeedback(InfoBarSeverity.Error, streamError);
                             assistantMsg.IsStreaming = false;
-                            RefreshMessage(assistantMsg);
+                            PersistActiveConversation();
                             break;
                         case ChatStreamEventType.Cancelled:
                             Error = "Request cancelled.";
                             SetFeedback(InfoBarSeverity.Warning, "Request cancelled.");
                             assistantMsg.IsStreaming = false;
-                            RefreshMessage(assistantMsg);
+                            PersistActiveConversation();
                             break;
                     }
                 });
@@ -248,7 +330,7 @@ public partial class ChatViewModel : ObservableObject
                 Error = "Request cancelled.";
                 SetFeedback(InfoBarSeverity.Warning, "Request cancelled.");
                 assistantMsg.IsStreaming = false;
-                RefreshMessage(assistantMsg);
+                PersistActiveConversation();
             });
         }
         catch (Exception ex)
@@ -264,7 +346,7 @@ public partial class ChatViewModel : ObservableObject
                 Error = requestError;
                 SetFeedback(InfoBarSeverity.Error, requestError);
                 assistantMsg.IsStreaming = false;
-                RefreshMessage(assistantMsg);
+                PersistActiveConversation();
             });
         }
         finally
@@ -272,12 +354,6 @@ public partial class ChatViewModel : ObservableObject
             IsStreaming = false;
             _streamCts?.Dispose();
             _streamCts = null;
-
-            if (_activeConversation is not null)
-            {
-                _activeConversation.Messages.Clear();
-                _activeConversation.Messages.AddRange(Messages);
-            }
         }
     }
 
@@ -309,7 +385,7 @@ public partial class ChatViewModel : ObservableObject
                     SetFeedback(InfoBarSeverity.Error, fallbackError);
                 }
 
-                RefreshMessage(assistantMsg);
+                PersistActiveConversation();
             });
 
             return true;
@@ -333,17 +409,55 @@ public partial class ChatViewModel : ObservableObject
         Error = null;
         SetFeedback(InfoBarSeverity.Informational, "Chat cleared.");
         if (_activeConversation is not null)
+        {
             _activeConversation.Messages.Clear();
+            TouchConversation(_activeConversation);
+        }
     }
 
-    private void RefreshMessage(ChatUiMessage msg)
+    private void LoadPersistedConversations()
     {
-        var idx = Messages.IndexOf(msg);
-        if (idx >= 0)
+        foreach (var conversation in _conversationStore.LoadAll())
         {
-            Messages.RemoveAt(idx);
-            Messages.Insert(idx, msg);
+            Conversations.Add(conversation);
+            UpdateMessageIdCounter(conversation);
         }
+    }
+
+    private void PersistActiveConversation()
+    {
+        if (_activeConversation is null)
+            return;
+
+        _activeConversation.Messages.Clear();
+        _activeConversation.Messages.AddRange(Messages);
+        TouchConversation(_activeConversation);
+    }
+
+    private void TouchConversation(Conversation conversation, bool persist = true)
+    {
+        conversation.UpdatedAt = DateTimeOffset.Now;
+        UpdateMessageIdCounter(conversation);
+        MoveConversationToTop(conversation);
+
+        if (persist)
+            _conversationStore.SaveConversation(conversation);
+    }
+
+    private void MoveConversationToTop(Conversation conversation)
+    {
+        var index = Conversations.IndexOf(conversation);
+        if (index <= 0)
+            return;
+
+        Conversations.Move(index, 0);
+    }
+
+    private void UpdateMessageIdCounter(Conversation conversation)
+    {
+        var maxMessageId = conversation.Messages.Count == 0 ? 0 : conversation.Messages.Max(static message => message.Id);
+        if (maxMessageId > _messageIdCounter)
+            _messageIdCounter = maxMessageId;
     }
 
     private static string BuildFriendlyError(Exception ex, string operation)
@@ -370,6 +484,13 @@ public partial class ChatViewModel : ObservableObject
 
     private void SetFeedback(InfoBarSeverity severity, string? message)
     {
+        if (severity is InfoBarSeverity.Success or InfoBarSeverity.Informational)
+        {
+            FeedbackSeverity = severity;
+            FeedbackMessage = null;
+            return;
+        }
+
         FeedbackSeverity = severity;
         FeedbackMessage = message;
     }

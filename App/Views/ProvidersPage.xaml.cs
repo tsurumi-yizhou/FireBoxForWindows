@@ -3,23 +3,51 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using App.Models;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Navigation;
 
 namespace App.Views;
 
 public sealed partial class ProvidersPage : Page
 {
     private List<ProviderDto> _providers = [];
+    private ProviderBindingActivation? _pendingBindingActivation;
 
     public ProvidersPage()
     {
         InitializeComponent();
     }
 
-    private void OnLoaded(object sender, RoutedEventArgs e) => RefreshProviders();
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        RefreshProviders();
+
+        if (_pendingBindingActivation is { } activation)
+        {
+            _pendingBindingActivation = null;
+            _ = HandleBindingActivationAsync(activation);
+        }
+    }
+
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+
+        if (e.Parameter is not ProviderBindingActivation activation)
+            return;
+
+        if (XamlRoot is null)
+        {
+            _pendingBindingActivation = activation;
+            return;
+        }
+
+        _ = HandleBindingActivationAsync(activation);
+    }
 
     private async void AddProvider_Click(object sender, RoutedEventArgs e) =>
         await ShowProviderEditorDialogAsync(null);
@@ -115,6 +143,7 @@ public sealed partial class ProvidersPage : Page
         return new Border
         {
             Style = (Style)Resources["CardStyle"],
+            HorizontalAlignment = HorizontalAlignment.Stretch,
             Child = content,
         };
     }
@@ -127,6 +156,8 @@ public sealed partial class ProvidersPage : Page
             return;
         }
 
+        var dialogWidth = ConfigurationUiHelpers.GetResponsiveDialogWidth(XamlRoot, 420, preferredFraction: 0.62, maxFraction: 0.7);
+
         var dialog = new ContentDialog
         {
             Title = existing is null ? "Add Provider" : "Edit Provider",
@@ -134,12 +165,14 @@ public sealed partial class ProvidersPage : Page
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot,
+            MinWidth = dialogWidth,
+            MaxWidth = dialogWidth,
         };
 
         var form = new StackPanel
         {
             Spacing = 12,
-            MinWidth = 420,
+            MinWidth = Math.Max(420, dialogWidth - 96),
         };
 
         var statusText = new TextBlock
@@ -185,9 +218,15 @@ public sealed partial class ProvidersPage : Page
         {
             Header = "Base URL",
             Text = existing?.BaseUrl ?? string.Empty,
-            PlaceholderText = "Leave empty to use the provider default",
+            PlaceholderText = "Enter full API base URL (include version path like /v1 or /v2), or leave empty for default",
         };
         form.Children.Add(urlBox);
+        form.Children.Add(new TextBlock
+        {
+            Text = "For OpenAI-compatible providers, please enter the complete API base path explicitly (for example .../v1 or .../v2). FireBox will not auto-append a version path.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = ConfigurationUiHelpers.SecondaryBrush(),
+        });
 
         var apiKeyBox = new PasswordBox
         {
@@ -269,25 +308,28 @@ public sealed partial class ProvidersPage : Page
             return;
         }
 
-        List<string> allModels;
+        List<string> fetchedModels = [];
+        string? fetchWarning = null;
         try
         {
             var json = App.Connection.Control.FetchProviderModels(provider.Id);
-            var fetchedModels = JsonSerializer.Deserialize<List<string>>(json, ConfigurationUiHelpers.JsonOptions) ?? [];
-            allModels = fetchedModels
-                .Concat(provider.EnabledModelIds)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(static model => model, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            fetchedModels = JsonSerializer.Deserialize<List<string>>(json, ConfigurationUiHelpers.JsonOptions) ?? [];
         }
         catch (Exception ex)
         {
-            await ConfigurationUiHelpers.ShowMessageDialogAsync(XamlRoot, "Couldn't fetch models", ex.Message);
-            ConfigurationUiHelpers.ShowStatus(StatusBar, InfoBarSeverity.Error, "Couldn't fetch models", ex.Message);
-            return;
+            fetchWarning = ex.Message;
+            ConfigurationUiHelpers.ShowStatus(StatusBar, InfoBarSeverity.Warning, "Couldn't fetch models automatically", "You can still add model IDs manually.");
         }
 
+        var allModels = fetchedModels
+            .Concat(provider.EnabledModelIds)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static model => model, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
         var selectedModels = new HashSet<string>(provider.EnabledModelIds, StringComparer.OrdinalIgnoreCase);
+
+        var dialogWidth = ConfigurationUiHelpers.GetResponsiveDialogWidth(XamlRoot, 560, preferredFraction: 0.7, maxFraction: 0.75);
 
         var dialog = new ContentDialog
         {
@@ -296,12 +338,15 @@ public sealed partial class ProvidersPage : Page
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot,
+            MinWidth = dialogWidth,
+            MaxWidth = dialogWidth,
         };
 
         var content = new StackPanel
         {
             Spacing = 12,
-            MinWidth = 500,
+            MinWidth = Math.Max(560, dialogWidth - 96),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
         };
 
         var statusText = new TextBlock
@@ -312,10 +357,46 @@ public sealed partial class ProvidersPage : Page
         };
         content.Children.Add(statusText);
 
+        if (!string.IsNullOrWhiteSpace(fetchWarning))
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = "Automatic model discovery failed. Add model IDs manually below, then save.",
+                Foreground = ConfigurationUiHelpers.SecondaryBrush(),
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+
+        var manualModelPanel = new Grid
+        {
+            ColumnSpacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        manualModelPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        manualModelPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var manualModelBox = new TextBox
+        {
+            Header = "Add Model ID Manually",
+            PlaceholderText = "e.g. gpt-4o-mini",
+        };
+        Grid.SetColumn(manualModelBox, 0);
+        manualModelPanel.Children.Add(manualModelBox);
+
+        var addManualModelButton = new Button
+        {
+            Content = "Add",
+            VerticalAlignment = VerticalAlignment.Bottom,
+        };
+        Grid.SetColumn(addManualModelButton, 1);
+        manualModelPanel.Children.Add(addManualModelButton);
+        content.Children.Add(manualModelPanel);
+
         var searchBox = new TextBox
         {
             Header = "Search Models",
             PlaceholderText = "Type part of a model name",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
         };
         content.Children.Add(searchBox);
 
@@ -326,12 +407,25 @@ public sealed partial class ProvidersPage : Page
         };
         content.Children.Add(summaryText);
 
-        var modelsHost = new StackPanel { Spacing = 4 };
+        var modelsHost = new StackPanel
+        {
+            Spacing = 4,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
         content.Children.Add(new ScrollViewer
         {
-            Content = modelsHost,
-            MinHeight = 340,
-            MaxHeight = 420,
+            Content = new Border
+            {
+                Padding = new Thickness(0, 8, 12, 16),
+                Child = modelsHost,
+            },
+            MinHeight = 280,
+            MaxHeight = 320,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalScrollMode = ScrollMode.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollMode = ScrollMode.Enabled,
         });
 
         void RenderModels()
@@ -357,6 +451,7 @@ public sealed partial class ProvidersPage : Page
                 {
                     Content = model,
                     IsChecked = selectedModels.Contains(model),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
                 };
 
                 checkbox.Checked += (_, _) =>
@@ -375,8 +470,31 @@ public sealed partial class ProvidersPage : Page
         }
 
         searchBox.TextChanged += (_, _) => RenderModels();
+        addManualModelButton.Click += (_, _) =>
+        {
+            var modelId = manualModelBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(modelId))
+                return;
+
+            if (!allModels.Contains(modelId, StringComparer.OrdinalIgnoreCase))
+            {
+                allModels.Add(modelId);
+                allModels = allModels
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(static model => model, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+            }
+
+            selectedModels.Add(modelId);
+            manualModelBox.Text = string.Empty;
+            RenderModels();
+        };
         RenderModels();
-        dialog.Content = content;
+        dialog.Content = new Border
+        {
+            Padding = new Thickness(0, 0, 0, 8),
+            Child = content,
+        };
 
         var saved = false;
         dialog.PrimaryButtonClick += (_, args) =>
@@ -459,5 +577,112 @@ public sealed partial class ProvidersPage : Page
 
         var suffix = enabledModels.Count > preview.Count ? ", ..." : string.Empty;
         return $"{enabledModels.Count} enabled model(s): {string.Join(", ", preview)}{suffix}";
+    }
+
+    private async Task HandleBindingActivationAsync(ProviderBindingActivation activation)
+    {
+        if (!activation.IsValid || activation.Request is null)
+        {
+            var errorMessage = activation.ErrorMessage ?? "The FireBox link is invalid.";
+            await ConfigurationUiHelpers.ShowMessageDialogAsync(
+                XamlRoot,
+                "Invalid FireBox link",
+                $"{errorMessage}\n\n{activation.SourceUri}");
+            ConfigurationUiHelpers.ShowStatus(StatusBar, InfoBarSeverity.Error, "Invalid FireBox link", errorMessage);
+            return;
+        }
+
+        if (App.Connection is null)
+        {
+            var message = "FireBox Service is not connected, so the provider could not be imported from the link.";
+            await ConfigurationUiHelpers.ShowMessageDialogAsync(XamlRoot, "Couldn't bind provider", message);
+            ConfigurationUiHelpers.ShowStatus(StatusBar, InfoBarSeverity.Warning, "Not connected", message);
+            return;
+        }
+
+        var request = activation.Request;
+        var result = await new ContentDialog
+        {
+            Title = "Bind Provider",
+            PrimaryButtonText = "Bind",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot,
+            Content = CreateBindingConfirmationContent(request, activation.SourceUri),
+        }.ShowAsync();
+
+        if (result != ContentDialogResult.Primary)
+        {
+            ConfigurationUiHelpers.ShowStatus(StatusBar, InfoBarSeverity.Informational, "Binding cancelled", "Provider import was cancelled.");
+            return;
+        }
+
+        try
+        {
+            App.Connection.Control.AddProvider(
+                request.ProviderType,
+                request.Name,
+                request.BaseUrl,
+                request.ApiKey);
+
+            RefreshProviders();
+            ConfigurationUiHelpers.ShowStatus(StatusBar, InfoBarSeverity.Success, "Provider bound", $"Imported provider '{request.Name}'.");
+        }
+        catch (Exception ex)
+        {
+            await ConfigurationUiHelpers.ShowMessageDialogAsync(XamlRoot, "Couldn't bind provider", ex.Message);
+            ConfigurationUiHelpers.ShowStatus(StatusBar, InfoBarSeverity.Error, "Couldn't bind provider", ex.Message);
+        }
+    }
+
+    private static UIElement CreateBindingConfirmationContent(ProviderBindingRequest request, string sourceUri)
+    {
+        var panel = new StackPanel
+        {
+            Spacing = 8,
+            MinWidth = 520,
+        };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Import the provider settings from this FireBox link?",
+            TextWrapping = TextWrapping.Wrap,
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"Type: {request.ProviderDisplayName}",
+            TextWrapping = TextWrapping.Wrap,
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"Name: {request.Name}",
+            TextWrapping = TextWrapping.Wrap,
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"Base URL: {(string.IsNullOrWhiteSpace(request.BaseUrl) ? "Default provider endpoint" : request.BaseUrl)}",
+            TextWrapping = TextWrapping.Wrap,
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"API Key: {(string.IsNullOrWhiteSpace(request.ApiKey) ? "Not provided" : MaskSecret(request.ApiKey))}",
+            TextWrapping = TextWrapping.Wrap,
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"Source: {sourceUri}",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = ConfigurationUiHelpers.SecondaryBrush(),
+        });
+
+        return panel;
+    }
+
+    private static string MaskSecret(string value)
+    {
+        if (value.Length <= 8)
+            return new string('*', value.Length);
+
+        return $"{value[..4]}...{value[^4..]}";
     }
 }

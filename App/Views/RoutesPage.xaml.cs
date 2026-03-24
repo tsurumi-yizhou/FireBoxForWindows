@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Core.Models;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -84,7 +85,7 @@ public sealed partial class RoutesPage : Page
         });
         titlePanel.Children.Add(new TextBlock
         {
-            Text = $"Strategy: {route.Strategy}",
+            Text = $"Strategy: {NormalizeStrategy(route.Strategy)}",
             Foreground = ConfigurationUiHelpers.SecondaryBrush(),
         });
         Grid.SetColumn(titlePanel, 0);
@@ -113,6 +114,20 @@ public sealed partial class RoutesPage : Page
             TextWrapping = TextWrapping.Wrap,
         });
 
+        content.Children.Add(new TextBlock
+        {
+            Text = $"Input: {DescribeMediaFormats(route.InputFormatsMask)}",
+            Foreground = ConfigurationUiHelpers.SecondaryBrush(),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        content.Children.Add(new TextBlock
+        {
+            Text = $"Output: {DescribeMediaFormats(route.OutputFormatsMask)}",
+            Foreground = ConfigurationUiHelpers.SecondaryBrush(),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
         if (route.Candidates.Count == 0)
         {
             content.Children.Add(ConfigurationUiHelpers.CreateInlineMessage("No target candidates configured."));
@@ -132,6 +147,7 @@ public sealed partial class RoutesPage : Page
         return new Border
         {
             Style = (Style)Resources["CardStyle"],
+            HorizontalAlignment = HorizontalAlignment.Stretch,
             Child = content,
         };
     }
@@ -178,12 +194,13 @@ public sealed partial class RoutesPage : Page
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot,
+            MinWidth = 760,
         };
 
         var content = new StackPanel
         {
-            Spacing = 14,
-            MinWidth = 560,
+            Spacing = 16,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
         };
 
         var errorText = new TextBlock
@@ -209,6 +226,7 @@ public sealed partial class RoutesPage : Page
             Header = "Virtual Model ID",
             Text = existing?.VirtualModelId ?? string.Empty,
             PlaceholderText = "e.g. gpt-4o",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
         };
         content.Children.Add(virtualModelIdBox);
 
@@ -217,10 +235,20 @@ public sealed partial class RoutesPage : Page
             Header = "Strategy",
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
-        strategyBox.Items.Add("Failover");
+        strategyBox.Items.Add("Ordered");
         strategyBox.Items.Add("Random");
-        strategyBox.SelectedItem = existing?.Strategy ?? "Failover";
+        strategyBox.SelectedItem = NormalizeStrategy(existing?.Strategy);
         content.Children.Add(strategyBox);
+
+        var capabilitiesSection = new StackPanel
+        {
+            Spacing = 8,
+        };
+        capabilitiesSection.Children.Add(new TextBlock
+        {
+            Text = "Capabilities",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+        });
 
         var capabilitiesPanel = new StackPanel
         {
@@ -239,7 +267,74 @@ public sealed partial class RoutesPage : Page
         };
         capabilitiesPanel.Children.Add(reasoningCheck);
         capabilitiesPanel.Children.Add(toolCallingCheck);
-        content.Children.Add(capabilitiesPanel);
+        capabilitiesSection.Children.Add(capabilitiesPanel);
+        content.Children.Add(capabilitiesSection);
+
+        var inputImageCheck = new CheckBox
+        {
+            Content = "Image",
+            IsChecked = (((existing?.InputFormatsMask) ?? 0) & ModelMediaFormatMask.ImageBit) != 0,
+        };
+        var inputVideoCheck = new CheckBox
+        {
+            Content = "Video",
+            IsChecked = (((existing?.InputFormatsMask) ?? 0) & ModelMediaFormatMask.VideoBit) != 0,
+        };
+        var inputAudioCheck = new CheckBox
+        {
+            Content = "Audio",
+            IsChecked = (((existing?.InputFormatsMask) ?? 0) & ModelMediaFormatMask.AudioBit) != 0,
+        };
+        var inputFormatsPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 16,
+        };
+        inputFormatsPanel.Children.Add(inputImageCheck);
+        inputFormatsPanel.Children.Add(inputVideoCheck);
+        inputFormatsPanel.Children.Add(inputAudioCheck);
+
+        var outputImageCheck = new CheckBox
+        {
+            Content = "Image",
+            IsChecked = (((existing?.OutputFormatsMask) ?? 0) & ModelMediaFormatMask.ImageBit) != 0,
+        };
+        var outputVideoCheck = new CheckBox
+        {
+            Content = "Video",
+            IsChecked = (((existing?.OutputFormatsMask) ?? 0) & ModelMediaFormatMask.VideoBit) != 0,
+        };
+        var outputAudioCheck = new CheckBox
+        {
+            Content = "Audio",
+            IsChecked = (((existing?.OutputFormatsMask) ?? 0) & ModelMediaFormatMask.AudioBit) != 0,
+        };
+        var outputFormatsPanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 16,
+        };
+        outputFormatsPanel.Children.Add(outputImageCheck);
+        outputFormatsPanel.Children.Add(outputVideoCheck);
+        outputFormatsPanel.Children.Add(outputAudioCheck);
+
+        var inputSection = new StackPanel { Spacing = 8 };
+        inputSection.Children.Add(new TextBlock
+        {
+            Text = "Multimodal Input",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+        });
+        inputSection.Children.Add(inputFormatsPanel);
+        content.Children.Add(inputSection);
+
+        var outputSection = new StackPanel { Spacing = 8 };
+        outputSection.Children.Add(new TextBlock
+        {
+            Text = "Multimodal Output",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+        });
+        outputSection.Children.Add(outputFormatsPanel);
+        content.Children.Add(outputSection);
 
         content.Children.Add(new TextBlock
         {
@@ -248,22 +343,55 @@ public sealed partial class RoutesPage : Page
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
         });
 
-        var candidatesHost = new StackPanel { Spacing = 8 };
-        content.Children.Add(candidatesHost);
+        var candidatesHost = new StackPanel
+        {
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        var candidatesScrollViewer = new ScrollViewer
+        {
+            Content = new Border
+            {
+                Padding = new Thickness(0, 0, 12, 0),
+                Child = candidatesHost,
+            },
+            Height = 240,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalScrollMode = ScrollMode.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollMode = ScrollMode.Enabled,
+        };
+        content.Children.Add(candidatesScrollViewer);
 
         var addCandidateButton = new Button { Content = "Add Candidate" };
+        ScrollViewer? dialogScrollViewer = null;
         addCandidateButton.Click += (_, _) =>
         {
             candidateStates.Add(new CandidateEditorState());
             RenderCandidates();
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                candidatesScrollViewer.UpdateLayout();
+                candidatesScrollViewer.ChangeView(null, candidatesScrollViewer.ScrollableHeight, null, disableAnimation: false);
+            });
         };
         content.Children.Add(addCandidateButton);
 
-        dialog.Content = new ScrollViewer
+        dialogScrollViewer = new ScrollViewer
         {
-            Content = content,
-            MaxHeight = 620,
+            Content = new Border
+            {
+                Padding = new Thickness(0, 12, 16, 8),
+                Child = content,
+            },
+            MaxHeight = 700,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalScrollMode = ScrollMode.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollMode = ScrollMode.Enabled,
         };
+        dialog.Content = dialogScrollViewer;
 
         List<string> GetEnabledModels(int? providerId)
         {
@@ -282,33 +410,45 @@ public sealed partial class RoutesPage : Page
             {
                 var candidate = candidateStates[index];
 
-                var row = new Grid
+                var cardContent = new StackPanel
                 {
-                    ColumnSpacing = 12,
+                    Spacing = 12,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
                 };
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var cardHeader = new Grid
+                {
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                };
+                cardHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                cardHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var cardTitle = new TextBlock
+                {
+                    Text = $"Candidate {index + 1}",
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                Grid.SetColumn(cardTitle, 0);
+                cardHeader.Children.Add(cardTitle);
 
                 var providerBox = new ComboBox
                 {
-                    Header = index == 0 ? "Provider" : $"Provider #{index + 1}",
+                    Header = "Provider",
                     PlaceholderText = "Select provider",
+                    MaxDropDownHeight = 320,
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                     ItemsSource = selectableProviders,
                 };
                 providerBox.SelectedItem = selectableProviders.FirstOrDefault(provider => provider.Id == candidate.ProviderId);
-                Grid.SetColumn(providerBox, 0);
-                row.Children.Add(providerBox);
 
                 var modelBox = new ComboBox
                 {
-                    Header = index == 0 ? "Model" : $"Model #{index + 1}",
+                    Header = "Model",
                     PlaceholderText = "Select model",
+                    MaxDropDownHeight = 320,
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                 };
-                Grid.SetColumn(modelBox, 1);
-                row.Children.Add(modelBox);
 
                 void SyncModelBox(bool autoSelectFirstModel)
                 {
@@ -341,10 +481,16 @@ public sealed partial class RoutesPage : Page
 
                 var removeButton = new Button
                 {
-                    Content = "Remove",
-                    VerticalAlignment = VerticalAlignment.Bottom,
+                    Content = new SymbolIcon(Symbol.Cancel),
+                    Width = 28,
+                    Height = 28,
+                    MinWidth = 28,
+                    Padding = new Thickness(0),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Top,
                     IsEnabled = candidateStates.Count > 1,
                 };
+                ToolTipService.SetToolTip(removeButton, "Remove candidate");
                 removeButton.Click += (_, _) =>
                 {
                     candidateStates.Remove(candidate);
@@ -352,8 +498,19 @@ public sealed partial class RoutesPage : Page
                         candidateStates.Add(new CandidateEditorState());
                     RenderCandidates();
                 };
-                Grid.SetColumn(removeButton, 2);
-                row.Children.Add(removeButton);
+                Grid.SetColumn(removeButton, 1);
+                cardHeader.Children.Add(removeButton);
+
+                var candidateFieldsPanel = new StackPanel
+                {
+                    Spacing = 12,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                };
+                candidateFieldsPanel.Children.Add(providerBox);
+                candidateFieldsPanel.Children.Add(modelBox);
+
+                cardContent.Children.Add(cardHeader);
+                cardContent.Children.Add(candidateFieldsPanel);
 
                 candidatesHost.Children.Add(new Border
                 {
@@ -362,7 +519,8 @@ public sealed partial class RoutesPage : Page
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(10),
                     Padding = new Thickness(12),
-                    Child = row,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    Child = cardContent,
                 });
             }
         }
@@ -408,29 +566,31 @@ public sealed partial class RoutesPage : Page
                 }
 
                 var candidatesJson = JsonSerializer.Serialize(serializedTargets);
+                var inputFormatsMask = BuildMediaMask(inputImageCheck, inputVideoCheck, inputAudioCheck);
+                var outputFormatsMask = BuildMediaMask(outputImageCheck, outputVideoCheck, outputAudioCheck);
 
                 if (existing is null)
                 {
                     App.Connection.Control.AddRoute(
                         virtualModelId,
-                        strategyBox.SelectedItem?.ToString() ?? "Failover",
+                        strategyBox.SelectedItem?.ToString() ?? "Ordered",
                         candidatesJson,
                         reasoningCheck.IsChecked == true ? 1 : 0,
                         toolCallingCheck.IsChecked == true ? 1 : 0,
-                        0,
-                        0);
+                        inputFormatsMask,
+                        outputFormatsMask);
                 }
                 else
                 {
                     App.Connection.Control.UpdateRoute(
                         existing.Id,
                         virtualModelId,
-                        strategyBox.SelectedItem?.ToString() ?? "Failover",
+                        strategyBox.SelectedItem?.ToString() ?? "Ordered",
                         candidatesJson,
                         reasoningCheck.IsChecked == true ? 1 : 0,
                         toolCallingCheck.IsChecked == true ? 1 : 0,
-                        existing.InputFormatsMask,
-                        existing.OutputFormatsMask);
+                        inputFormatsMask,
+                        outputFormatsMask);
                 }
 
                 saved = true;
@@ -500,6 +660,27 @@ public sealed partial class RoutesPage : Page
         var providerLabel = provider?.DisplayName ?? $"Provider #{candidate.ProviderId}";
         return $"{providerLabel} -> {candidate.ModelId}";
     }
+
+    private static int BuildMediaMask(CheckBox imageCheck, CheckBox videoCheck, CheckBox audioCheck)
+    {
+        var mask = 0;
+        if (imageCheck.IsChecked == true) mask |= ModelMediaFormatMask.ImageBit;
+        if (videoCheck.IsChecked == true) mask |= ModelMediaFormatMask.VideoBit;
+        if (audioCheck.IsChecked == true) mask |= ModelMediaFormatMask.AudioBit;
+        return mask;
+    }
+
+    private static string DescribeMediaFormats(int mask)
+    {
+        var formats = new List<string>();
+        if ((mask & ModelMediaFormatMask.ImageBit) != 0) formats.Add("Image");
+        if ((mask & ModelMediaFormatMask.VideoBit) != 0) formats.Add("Video");
+        if ((mask & ModelMediaFormatMask.AudioBit) != 0) formats.Add("Audio");
+        return formats.Count == 0 ? "Text only" : string.Join(", ", formats);
+    }
+
+    private static string NormalizeStrategy(string? strategy) =>
+        string.Equals(strategy, "Random", StringComparison.OrdinalIgnoreCase) ? "Random" : "Ordered";
 
     private sealed class CandidateEditorState
     {

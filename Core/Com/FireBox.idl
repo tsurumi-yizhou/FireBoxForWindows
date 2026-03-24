@@ -3,7 +3,7 @@ import "ocidl.idl";
 
 [
     uuid(dc51fb4b-bd5d-4613-8786-e154926b7035),
-    version(1.2),
+    version(1.4),
     helpstring("FireBox Type Library")
 ]
 library FireBoxLib
@@ -247,14 +247,16 @@ library FireBoxLib
 
         [id(4)] HRESULT ChatCompletion(
             [in] BSTR virtualModelId,
-            [in] BSTR conversationText,
+            [in] BSTR messagesJson,
+            [in] BSTR attachmentsJson,
             [in] float temperature,
             [in] int maxOutputTokens,
             [out, retval] ChatCompletionResultStruct* result);
 
         [id(5)] HRESULT StartChatCompletionStream(
             [in] BSTR virtualModelId,
-            [in] BSTR conversationText,
+            [in] BSTR messagesJson,
+            [in] BSTR attachmentsJson,
             [in] float temperature,
             [in] int maxOutputTokens,
             [in] IFireBoxStreamCallback* callback,

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
+using System.Text.Json;
 using Core.Configuration;
 using Core.Com.Structs;
 using Core.Dispatch;
@@ -133,19 +134,27 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
             // New records default to IsAllowed = false, so the client is visible
             // but blocked until an admin explicitly approves it.
             mgr.RecordClientAccess(pid, _processName, _executablePath);
+            ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.RegisterClient", $"pid={pid}, process={_processName}, path={_executablePath}");
 
             if (!IsTrustedFirstPartyClient(_processName, _executablePath) &&
                 !mgr.IsClientAllowed(_processName, _executablePath))
+            {
+                ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.AccessDenied", $"pid={pid}, process={_processName}, path={_executablePath}");
                 throw new UnauthorizedAccessException($"Client '{_processName}' ({_executablePath}) is not allowed. An administrator must approve this client.");
+            }
 
             _connectionId = mgr.RegisterConnection(pid, _processName, _executablePath);
             _registered = true;
+            ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.ConnectionRegistered", $"connectionId={_connectionId}, pid={pid}, process={_processName}");
         }
         else
         {
             if (!IsTrustedFirstPartyClient(_processName, _executablePath) &&
                 !mgr.IsClientAllowed(_processName, _executablePath))
+            {
+                ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.AccessDenied", $"connectionId={_connectionId}, process={_processName}, path={_executablePath}");
                 throw new UnauthorizedAccessException($"Client '{_processName}' ({_executablePath}) is not allowed.");
+            }
         }
 
         mgr.IncrementRequestCount(_connectionId);
@@ -172,7 +181,11 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
         }
     }
 
-    public string Ping(string message) => $"Pong: {message}";
+    public string Ping(string message)
+    {
+        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.Ping", $"message={message}");
+        return $"Pong: {message}";
+    }
 
     public void GetVirtualModelCount(out int count)
     {
@@ -245,14 +258,16 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
 
     public void ChatCompletion(
         string virtualModelId,
-        string conversationText,
+        string messagesJson,
+        string? attachmentsJson,
         float temperature,
         int maxOutputTokens,
         out ChatCompletionResultStruct result)
     {
         EnsureRegisteredAndAllowed();
+        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.ChatCompletion", $"connectionId={_connectionId}, virtualModelId={virtualModelId}, temperature={temperature}, maxOutputTokens={maxOutputTokens}");
         var dispatcher = GetDispatcher();
-        var messages = BuildMessagesFromConversationText(conversationText);
+        var messages = DeserializeMessagesWithAttachments(messagesJson, attachmentsJson);
 
         var request = new ChatCompletionRequest(virtualModelId, messages, null, temperature, maxOutputTokens);
 
@@ -269,18 +284,20 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
 
     public long StartChatCompletionStream(
         string virtualModelId,
-        string conversationText,
+        string messagesJson,
+        string? attachmentsJson,
         float temperature,
         int maxOutputTokens,
         IFireBoxStreamCallback callback)
     {
         EnsureRegisteredAndAllowed();
         var requestId = Interlocked.Increment(ref s_nextRequestId);
+        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.StartChatCompletionStream", $"connectionId={_connectionId}, requestId={requestId}, virtualModelId={virtualModelId}, temperature={temperature}, maxOutputTokens={maxOutputTokens}");
         var cts = new CancellationTokenSource();
         s_activeStreams[requestId] = cts;
 
         var dispatcher = GetDispatcher();
-        var messages = BuildMessagesFromConversationText(conversationText);
+        var messages = DeserializeMessagesWithAttachments(messagesJson, attachmentsJson);
         var request = new ChatCompletionRequest(virtualModelId, messages, null, temperature, maxOutputTokens);
 
         Interlocked.Increment(ref _activeStreamCount);
@@ -319,6 +336,7 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
 
     public void CancelChatCompletion(long requestId)
     {
+        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.CancelChatCompletion", $"requestId={requestId}");
         if (s_activeStreams.TryRemove(requestId, out var cts))
             cts.Cancel();
     }
@@ -329,6 +347,7 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
         out EmbeddingResultStruct result)
     {
         EnsureRegisteredAndAllowed();
+        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.CreateEmbeddings", $"connectionId={_connectionId}, virtualModelId={virtualModelId}");
         var dispatcher = GetDispatcher();
         var input = ParseBstrArray(inputArray);
         var request = new EmbeddingRequest(virtualModelId, input);
@@ -392,6 +411,7 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
         out FunctionCallResultStruct result)
     {
         EnsureRegisteredAndAllowed();
+        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.CallFunction", $"connectionId={_connectionId}, virtualModelId={virtualModelId}, functionName={functionName}, maxOutputTokens={maxOutputTokens}");
         var dispatcher = GetDispatcher();
         var request = new FunctionCallRequest(
             virtualModelId, functionName, functionDescription,
@@ -445,37 +465,54 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
         }
     }
 
-    private static List<ChatMessage> BuildMessagesFromConversationText(string conversationText)
+    private static readonly JsonSerializerOptions s_jsonOptions = new()
     {
-        if (string.IsNullOrWhiteSpace(conversationText))
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+    };
+
+    private static List<ChatMessage> DeserializeMessagesWithAttachments(string messagesJson, string? attachmentsJson)
+    {
+        if (string.IsNullOrWhiteSpace(messagesJson))
             return [];
 
-        return [new ChatMessage("user", conversationText)];
-    }
+        var messages = JsonSerializer.Deserialize<List<ChatMessage>>(messagesJson, s_jsonOptions) ?? [];
 
-    private static List<ChatMessage> ParseMessagesWithAttachments(IntPtr messagesArray, IntPtr attachmentsArray)
-    {
-        if (messagesArray == IntPtr.Zero) return [];
-        var msgStructs = NativeArrayMarshaller.ReadStructArray<ChatMessageStruct>(messagesArray);
-        var messages = msgStructs.Select(s => Mappers.ToModel(in s)).ToList();
+        if (string.IsNullOrWhiteSpace(attachmentsJson))
+            return messages;
 
-        if (attachmentsArray != IntPtr.Zero)
+        var attachments = JsonSerializer.Deserialize<List<ChatAttachmentDto>>(attachmentsJson, s_jsonOptions);
+        if (attachments is null || attachments.Count == 0)
+            return messages;
+
+        var grouped = attachments.GroupBy(a => a.MessageIndex);
+        foreach (var group in grouped)
         {
-            var attStructs = NativeArrayMarshaller.ReadStructArray<ChatAttachmentStruct>(attachmentsArray);
-            // Group attachments by messageIndex and merge into the correct message
-            var grouped = attStructs.Select(att => (att.MessageIndex, Value: Mappers.ToModel(in att)))
-                .GroupBy(a => a.MessageIndex);
-
-            foreach (var group in grouped)
-            {
-                var idx = group.Key;
-                if (idx < 0 || idx >= messages.Count) continue;
-                var atts = group.Select(x => x.Value).ToList();
-                messages[idx] = messages[idx] with { Attachments = atts };
-            }
+            var idx = group.Key;
+            if (idx < 0 || idx >= messages.Count) continue;
+            var atts = group.Select(a => {
+                var data = Convert.FromBase64String(a.Base64Data ?? string.Empty);
+                return new ChatAttachment(
+                    (ModelMediaFormat)a.MediaFormat,
+                    a.MimeType ?? string.Empty,
+                    a.FileName ?? string.Empty,
+                    data,
+                    a.SizeBytes > 0 ? a.SizeBytes : data.Length);
+            }).ToList();
+            messages[idx] = messages[idx] with { Attachments = atts };
         }
 
         return messages;
+    }
+
+    private sealed class ChatAttachmentDto
+    {
+        public int MessageIndex { get; set; }
+        public int MediaFormat { get; set; }
+        public string? MimeType { get; set; }
+        public string? FileName { get; set; }
+        public long SizeBytes { get; set; }
+        public string? Base64Data { get; set; }
     }
 
     private static List<string> ParseBstrArray(IntPtr nativeArray)
@@ -507,18 +544,11 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
 
     private void LogComFailure(string operation, Exception ex)
     {
-        try
-        {
-            var baseDir = GetServiceOptions().ResolveStorageRootPath();
-            Directory.CreateDirectory(baseDir);
-            var logPath = GetServiceOptions().ResolveComErrorLogPath();
-            var text = $"{DateTimeOffset.Now:O} [{operation}] {ex}\n";
-            File.AppendAllText(logPath, text);
-        }
-        catch
-        {
-            // best effort
-        }
+        ServiceRuntimeLog.WriteError(
+            ServiceProvider,
+            $"Capability.{operation}",
+            ex,
+            $"connectionId={_connectionId}, process={_processName}, path={_executablePath}");
     }
 
 }

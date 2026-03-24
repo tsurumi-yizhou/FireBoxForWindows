@@ -1,4 +1,6 @@
 using System;
+using System.Linq;
+using App.Models;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -32,14 +34,18 @@ public sealed partial class MainWindow : Window
         {
             HideStatus();
             NavView.IsEnabled = true;
-            if (!ContentFrame.Navigate(typeof(Views.DashboardPage)))
+            if (!NavigateToPage("Dashboard"))
             {
                 ShowFatalError("Failed to load dashboard", "The dashboard page could not be created.");
                 return;
             }
-
-            NavView.SelectedItem = NavView.MenuItems[0];
         }
+    }
+
+    internal void NavigateToProviderBinding(ProviderBindingActivation activation)
+    {
+        if (!NavigateToPage("Providers", activation))
+            ShowFatalError("Failed to open provider binding", "The Providers page could not be loaded.");
     }
 
     public void ShowFatalError(string title, string message)
@@ -54,21 +60,42 @@ public sealed partial class MainWindow : Window
     {
         if (args.SelectedItemContainer is NavigationViewItem item && item.Tag is string tag)
         {
-            var pageType = tag switch
-            {
-                "Dashboard" => typeof(Views.DashboardPage),
-                "Connections" => typeof(Views.ConnectionsPage),
-                "Providers" => typeof(Views.ProvidersPage),
-                "Routes" => typeof(Views.RoutesPage),
-                "Allowlist" => typeof(Views.AllowlistPage),
-                _ => null,
-            };
+            var pageType = ResolvePageType(tag);
             if (pageType is not null && !ContentFrame.Navigate(pageType))
             {
                 ShowFatalError("Failed to navigate", $"The page '{tag}' could not be loaded.");
             }
         }
     }
+
+    private bool NavigateToPage(string tag, object? parameter = null)
+    {
+        var pageType = ResolvePageType(tag);
+        if (pageType is null)
+            return false;
+
+        if (!ContentFrame.Navigate(pageType, parameter))
+            return false;
+
+        var selectedItem = NavView.MenuItems
+            .OfType<NavigationViewItem>()
+            .FirstOrDefault(item => string.Equals(item.Tag as string, tag, StringComparison.Ordinal));
+        if (selectedItem is not null)
+            NavView.SelectedItem = selectedItem;
+
+        return true;
+    }
+
+    private static Type? ResolvePageType(string tag) =>
+        tag switch
+        {
+            "Dashboard" => typeof(Views.DashboardPage),
+            "Connections" => typeof(Views.ConnectionsPage),
+            "Providers" => typeof(Views.ProvidersPage),
+            "Routes" => typeof(Views.RoutesPage),
+            "Allowlist" => typeof(Views.AllowlistPage),
+            _ => null,
+        };
 
     private void ConfigureTitleBar()
     {

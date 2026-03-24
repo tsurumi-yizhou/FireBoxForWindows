@@ -3,6 +3,8 @@ bin/
 obj/
 out/
 publish/
+artifacts/
+scripts/
 
 # Visual Studio
 .vs/
@@ -25,6 +27,7 @@ packages/
 # Windows App packaging
 AppPackages/
 BundleArtifacts/
+App/Service/
 Package.StoreAssociation.xml
 _pkginfo.txt
 *.appx

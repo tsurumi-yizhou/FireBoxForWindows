@@ -1,5 +1,7 @@
 using System.Runtime.ExceptionServices;
 using System.Runtime.CompilerServices;
+using System.Linq;
+using System.Text.Json;
 using Core.Com;
 using Core.Com.Structs;
 using Core.Models;
@@ -75,13 +77,15 @@ public sealed class FireBoxClient : IDisposable
 
     public ChatCompletionResult ChatCompletion(ChatCompletionRequest request)
     {
-        var conversationText = BuildConversationText(request.Messages);
+        var messages = BuildMessagesWithRequestAttachments(request);
+        var (messagesJson, attachmentsJson) = SerializeChatPayload(messages);
 
         try
         {
             _connection.Capability.ChatCompletion(
                 request.VirtualModelId,
-                conversationText,
+                messagesJson,
+                attachmentsJson,
                 request.Temperature,
                 request.MaxOutputTokens,
                 out var resultStruct);
@@ -110,13 +114,14 @@ public sealed class FireBoxClient : IDisposable
     {
         var callback = new StreamCallbackImpl();
         long requestId;
-
-        var conversationText = BuildConversationText(request.Messages);
+        var messages = BuildMessagesWithRequestAttachments(request);
+        var (messagesJson, attachmentsJson) = SerializeChatPayload(messages);
         try
         {
             requestId = _connection.Capability.StartChatCompletionStream(
                 request.VirtualModelId,
-                conversationText,
+                messagesJson,
+                attachmentsJson,
                 request.Temperature,
                 request.MaxOutputTokens,
                 callback);
@@ -228,23 +233,71 @@ public sealed class FireBoxClient : IDisposable
 
     // --- Helpers ---
 
-    private static string BuildConversationText(List<ChatMessage> messages)
+    private static readonly JsonSerializerOptions s_jsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
+    private static (string MessagesJson, string? AttachmentsJson) SerializeChatPayload(List<ChatMessage> messages)
     {
         if (messages.Count == 0)
-            return string.Empty;
+            return ("[]", null);
 
-        var sb = new System.Text.StringBuilder();
-        foreach (var message in messages)
+        // Serialize messages (role + content only)
+        var messageDtos = messages.Select(m => new { m.Role, m.Content }).ToArray();
+        var messagesJson = JsonSerializer.Serialize(messageDtos, s_jsonOptions);
+
+        // Serialize attachments if any exist
+        var attachmentDtos = new List<object>();
+        for (var i = 0; i < messages.Count; i++)
         {
-            if (string.IsNullOrWhiteSpace(message.Content))
-                continue;
-
-            sb.Append('[').Append(message.Role).AppendLine("]");
-            sb.AppendLine(message.Content);
-            sb.AppendLine();
+            if (messages[i].Attachments is not { Count: > 0 }) continue;
+            foreach (var att in messages[i].Attachments!)
+            {
+                attachmentDtos.Add(new
+                {
+                    MessageIndex = i,
+                    MediaFormat = (int)att.MediaFormat,
+                    att.MimeType,
+                    att.FileName,
+                    att.SizeBytes,
+                    Base64Data = Convert.ToBase64String(att.Data),
+                });
+            }
         }
 
-        return sb.ToString().Trim();
+        var attachmentsJson = attachmentDtos.Count > 0
+            ? JsonSerializer.Serialize(attachmentDtos, s_jsonOptions)
+            : null;
+
+        return (messagesJson, attachmentsJson);
+    }
+
+    private static List<ChatMessage> BuildMessagesWithRequestAttachments(ChatCompletionRequest request)
+    {
+        var messages = request.Messages
+            .Select(message => new ChatMessage(
+                message.Role,
+                message.Content,
+                message.Attachments is { Count: > 0 } ? [.. message.Attachments] : null))
+            .ToList();
+
+        if (request.Attachments is not { Count: > 0 })
+            return messages;
+
+        var targetIndex = messages.FindLastIndex(message => message.Role == "user");
+        if (targetIndex < 0)
+        {
+            messages.Add(new ChatMessage("user", string.Empty, [.. request.Attachments]));
+            return messages;
+        }
+
+        var target = messages[targetIndex];
+        var mergedAttachments = target.Attachments is { Count: > 0 }
+            ? target.Attachments.Concat(request.Attachments).ToList()
+            : [.. request.Attachments];
+        messages[targetIndex] = target with { Attachments = mergedAttachments };
+        return messages;
     }
 
     private static List<Embedding> ParseEmbeddingVectors(IntPtr indicesPtr, IntPtr vectorsPtr, int dim)

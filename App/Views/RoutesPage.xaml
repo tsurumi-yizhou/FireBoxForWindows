@@ -48,8 +48,12 @@
                  IsClosable="True"
                  Severity="Informational" />
 
-        <ScrollViewer Grid.Row="2">
-            <StackPanel x:Name="RouteCardsPanel" Spacing="16" />
+        <ScrollViewer Grid.Row="2"
+                      HorizontalScrollBarVisibility="Disabled"
+                      HorizontalScrollMode="Disabled">
+            <StackPanel x:Name="RouteCardsPanel"
+                        Spacing="16"
+                        HorizontalAlignment="Stretch" />
         </ScrollViewer>
     </Grid>
 </Page>

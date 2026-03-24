@@ -16,12 +16,14 @@ using Service.Providers;
 if (ComArgs.HasArg(args, "/RegServer", "-RegServer"))
 {
     ComSelfRegistration.RegisterPerUser();
+    ServiceRuntimeLog.WriteInfo(null, "Program.RegServer", "Per-user COM registration completed.");
     return;
 }
 
 if (ComArgs.HasArg(args, "/UnregServer", "-UnregServer"))
 {
     ComSelfRegistration.UnregisterPerUser();
+    ServiceRuntimeLog.WriteInfo(null, "Program.UnregServer", "Per-user COM unregistration completed.");
     return;
 }
 
@@ -36,6 +38,7 @@ if (!PackageIdentityHelper.IsRunningAsPackaged())
     catch (Exception ex)
     {
         Console.Error.WriteLine($"COM unregister skipped: {ex.Message}");
+        ServiceRuntimeLog.WriteError(null, "Program.ComUnregister", ex, "COM unregister skipped.");
     }
 
     try
@@ -45,10 +48,15 @@ if (!PackageIdentityHelper.IsRunningAsPackaged())
     catch (Exception ex)
     {
         Console.Error.WriteLine($"COM registration refresh failed: {ex.Message}");
+        ServiceRuntimeLog.WriteError(null, "Program.ComRegister", ex, "COM registration refresh failed.");
     }
 }
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory,
+});
 var serviceOptions = ServiceOptionsLoader.Load(builder.Configuration);
 
 using var singleInstanceMutex = new Mutex(initiallyOwned: true, serviceOptions.SingleInstanceMutexName, out var isPrimaryInstance);
@@ -116,7 +124,7 @@ host.Run();
 /// Registers both COM class factories on start and revokes them on stop.
 /// The Host keeps the process alive indefinitely.
 /// </summary>
-file class ComServerHostedService(IHostApplicationLifetime lifetime) : IHostedService
+file class ComServerHostedService(IHostApplicationLifetime lifetime, IServiceProvider serviceProvider) : IHostedService
 {
     private uint _controlCookie;
     private uint _capabilityCookie;
@@ -124,29 +132,32 @@ file class ComServerHostedService(IHostApplicationLifetime lifetime) : IHostedSe
     public Task StartAsync(CancellationToken cancellationToken)
     {
         var cw = new StrategyBasedComWrappers();
+        ServiceRuntimeLog.WriteInfo(serviceProvider, "ComServer.Start", "Registering COM class factories.");
 
         RegisterClass(
             FireBoxGuids.ControlClass,
-            new ComClassFactory<FireBoxControlClass>(() => new FireBoxControlClass(lifetime), cw),
+            new ComClassFactory<FireBoxControlClass>("FireBoxControlClass", () => new FireBoxControlClass(lifetime), cw, serviceProvider),
             out _controlCookie);
 
         RegisterClass(
             FireBoxGuids.CapabilityClass,
-            new ComClassFactory<FireBoxCapabilityClass>(() => new FireBoxCapabilityClass(), cw),
+            new ComClassFactory<FireBoxCapabilityClass>("FireBoxCapabilityClass", () => new FireBoxCapabilityClass(), cw, serviceProvider),
             out _capabilityCookie);
 
         Marshal.ThrowExceptionForHR(Ole32.CoResumeClassObjects());
+        ServiceRuntimeLog.WriteInfo(serviceProvider, "ComServer.Start", $"COM classes resumed. controlCookie={_controlCookie}, capabilityCookie={_capabilityCookie}");
         return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
+        ServiceRuntimeLog.WriteInfo(serviceProvider, "ComServer.Stop", $"Revoking COM classes. controlCookie={_controlCookie}, capabilityCookie={_capabilityCookie}");
         RevokeClass(ref _controlCookie);
         RevokeClass(ref _capabilityCookie);
         return Task.CompletedTask;
     }
 
-    private static void RegisterClass(string guidStr, object factory, out uint cookie)
+    private void RegisterClass(string guidStr, object factory, out uint cookie)
     {
         var clsid = Guid.Parse(guidStr);
         var hr = Ole32.CoRegisterClassObject(
@@ -155,10 +166,14 @@ file class ComServerHostedService(IHostApplicationLifetime lifetime) : IHostedSe
             Ole32.CLSCTX_LOCAL_SERVER,
             Ole32.REGCLS_MULTIPLEUSE | Ole32.REGCLS_SUSPENDED,
             out cookie);
+        if (hr < 0)
+            ServiceRuntimeLog.WriteInfo(serviceProvider, "ComServer.RegisterClass", $"FAILED clsid={guidStr}, hr=0x{hr:X8}");
+        else
+            ServiceRuntimeLog.WriteInfo(serviceProvider, "ComServer.RegisterClass", $"OK clsid={guidStr}, cookie={cookie}");
         Marshal.ThrowExceptionForHR(hr);
     }
 
-    private static void RevokeClass(ref uint cookie)
+    private void RevokeClass(ref uint cookie)
     {
         if (cookie != 0)
         {
@@ -171,14 +186,17 @@ file class ComServerHostedService(IHostApplicationLifetime lifetime) : IHostedSe
 /// <summary>
 /// Generic IClassFactory that creates instances of a GeneratedComClass type.
 /// </summary>
-file class ComClassFactory<T>(Func<T> factory, StrategyBasedComWrappers comWrappers) : IClassFactory
+file class ComClassFactory<T>(string className, Func<T> factory, StrategyBasedComWrappers comWrappers, IServiceProvider serviceProvider) : IClassFactory
     where T : class
 {
     public unsafe int CreateInstance(nint pUnkOuter, in Guid riid, out nint ppvObject)
     {
         ppvObject = nint.Zero;
         if (pUnkOuter != nint.Zero)
+        {
+            ServiceRuntimeLog.WriteInfo(serviceProvider, "ComClassFactory.CreateInstance", $"class={className}, rejected aggregation request for iid={riid}");
             return unchecked((int)0x80040110); // CLASS_E_NOAGGREGATION
+        }
 
         var obj = factory();
         var unk = comWrappers.GetOrCreateComInterfaceForObject(obj, CreateComInterfaceFlags.None);
@@ -186,6 +204,8 @@ file class ComClassFactory<T>(Func<T> factory, StrategyBasedComWrappers comWrapp
         Guid iid = riid;
         var hr = Marshal.QueryInterface(unk, in iid, out ppvObject);
         Marshal.Release(unk);
+        if (hr < 0)
+            ServiceRuntimeLog.WriteInfo(serviceProvider, "ComClassFactory.CreateInstance", $"class={className}, QueryInterface failed iid={riid}, hr=0x{hr:X8}");
         return hr;
     }
 
