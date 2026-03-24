@@ -146,12 +146,7 @@ jobs:
           "demo_asset=$demoAsset" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "client_asset=$clientAsset" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-      - name: Upload workflow artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: firebox-build-${{ steps.meta.outputs.asset_suffix }}
-          path: artifacts/release/*
-          if-no-files-found: error
+      # Never upload artifacts
 
       - name: Create release
         if: startsWith(github.ref, 'refs/tags/')
