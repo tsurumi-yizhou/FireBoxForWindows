@@ -19,42 +19,95 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBlock Text="Active Connections" Style="{ThemeResource TitleTextBlockStyle}" />
-            <Button Grid.Column="1" Content="Refresh" Click="RefreshButton_Click" />
+            <Button x:Name="RefreshButton" Grid.Column="1" Click="RefreshButton_Click">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                    <TextBlock Text="Refresh" />
+                </StackPanel>
+            </Button>
         </Grid>
 
         <InfoBar x:Name="StatusBar"
-                 Grid.Row="1"
-                 IsOpen="False"
-                 IsClosable="True"
-                 Severity="Informational" />
+            Grid.Row="1"
+            IsOpen="False"
+            IsClosable="True"
+            Severity="Informational" />
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="12">
-            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="8" Padding="16" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                CornerRadius="8" Padding="16"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                 <StackPanel>
-                    <TextBlock Text="Total" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" />
+                    <TextBlock Text="Total" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        FontSize="12" />
                     <TextBlock x:Name="TotalCount" Text="0" FontSize="24" FontWeight="SemiBold" />
                 </StackPanel>
             </Border>
         </StackPanel>
 
-        <ListView x:Name="ConnectionList" Grid.Row="3">
-            <ListView.ItemTemplate>
-                <DataTemplate>
-                    <Grid Padding="12" ColumnSpacing="16">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="{Binding ProcessName}" FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding ExecutablePath}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
-                        </StackPanel>
-                        <TextBlock Grid.Column="1" Text="{Binding RequestCountText}" VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="2" Text="{Binding ConnectedAtText}" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" />
-                    </Grid>
-                </DataTemplate>
-            </ListView.ItemTemplate>
-        </ListView>
+        <Grid Grid.Row="3">
+            <ListView x:Name="ConnectionList" SelectionMode="None">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Margin" Value="0,0,0,4" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="16">
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <FontIcon Glyph="&#xE773;" FontSize="18"
+                                    Foreground="{ThemeResource SystemAccentColor}"
+                                    VerticalAlignment="Center" />
+
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding ProcessName}" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding ExecutablePath}" FontSize="12"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"
+                                    VerticalAlignment="Center" Margin="0,0,16,0">
+                                    <FontIcon Glyph="&#xE8BC;" FontSize="14"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock Text="{Binding RequestCountText}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="8"
+                                    VerticalAlignment="Center">
+                                    <FontIcon Glyph="&#xE823;" FontSize="14"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <TextBlock Text="{Binding ConnectedAtText}"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        FontSize="12" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <ProgressRing x:Name="LoadingRing" IsActive="False" Width="32" Height="32"
+                HorizontalAlignment="Center" VerticalAlignment="Center" />
+
+            <StackPanel x:Name="EmptyStateView" Visibility="Collapsed" HorizontalAlignment="Center"
+                VerticalAlignment="Center" Spacing="12">
+                <FontIcon Glyph="&#xE734;" FontSize="48"
+                    Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                <TextBlock Text="No active connections"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </Grid>
     </Grid>
 </Page>

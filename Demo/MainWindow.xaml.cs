@@ -16,10 +16,13 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         ConversationNavView.MenuItemsSource = ChatPageView.ViewModel.Conversations;
         ConfigureTitleBar();
+        LoadingOverlay.Visibility = Visibility.Visible;
     }
 
     public void UpdateStatus()
     {
+        LoadingOverlay.Visibility = Visibility.Collapsed;
+
         if (App.ConnectionError is not null)
         {
             ChatPageView.UpdateClient(null);
