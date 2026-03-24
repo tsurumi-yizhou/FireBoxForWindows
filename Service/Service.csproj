@@ -49,13 +49,14 @@
     </PropertyGroup>
 
     <Target Name="GenerateFireBoxTypeLib"
+        Condition="'$(EnableFireBoxTypeLibGeneration)' != 'false'"
         BeforeTargets="Build;Publish"
         Inputs="$(FireBoxIdl)"
         Outputs="$(FireBoxTlb)">
         <PropertyGroup>
             <_MidlSdkDir Condition="'$(WindowsSdkDir)' != ''">$(WindowsSdkDir)</_MidlSdkDir>
-            <_MidlSdkDir Condition="'$(_MidlSdkDir)' == ''">$(registry:HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows
-                Kits\Installed Roots@KitsRoot10)</_MidlSdkDir>
+            <_MidlSdkDir Condition="'$(_MidlSdkDir)' == ''">$(registry:HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows Kits\Installed Roots@KitsRoot10)</_MidlSdkDir>
+            <_MidlSdkDir Condition="'$(_MidlSdkDir)' == '' and Exists('$(ProgramFiles(x86))\Windows Kits\10\')">$(ProgramFiles(x86))\Windows Kits\10\</_MidlSdkDir>
             <_MidlExe>$(_MidlSdkDir)bin\$(TargetPlatformVersion)\x64\midl.exe</_MidlExe>
         </PropertyGroup>
         <MakeDir Directories="$(FireBoxMidlOutDir)" />
@@ -65,7 +66,7 @@
 
     <ItemGroup>
         <None Include="$(FireBoxTlb)" CopyToOutputDirectory="PreserveNewest"
-            CopyToPublishDirectory="PreserveNewest" Visible="false">
+            CopyToPublishDirectory="PreserveNewest" Visible="false" Condition="Exists('$(FireBoxTlb)')">
             <TargetPath>FireBox.tlb</TargetPath>
         </None>
     </ItemGroup>
