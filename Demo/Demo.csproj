@@ -34,9 +34,8 @@
     <ItemGroup>
         <Manifest Include="$(ApplicationManifest)" />
 
-        <Content Include="..\App\Assets\**\*" CopyToOutputDirectory="PreserveNewest">
-            <Link>Assets\%(RecursiveDir)%(Filename)%(Extension)</Link>
-        </Content>
+        <None Remove="Assets\**\*" />
+        <Content Include="Assets\**\*" CopyToOutputDirectory="PreserveNewest" />
 
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
         <PackageReference Include="CommunityToolkit.WinUI.UI.Controls.Markdown" Version="7.1.2" />

@@ -8,7 +8,6 @@ public sealed class ProviderConfigEntity
     public string BaseUrl { get; set; } = string.Empty;
     public byte[] EncryptedApiKey { get; set; } = [];
     public string EnabledModelIdsJson { get; set; } = "[]"; // JSON array
-    public bool IsEnabled { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

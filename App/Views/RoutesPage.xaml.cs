@@ -85,7 +85,7 @@ public sealed partial class RoutesPage : Page
         });
         titlePanel.Children.Add(new TextBlock
         {
-            Text = $"Strategy: {NormalizeStrategy(route.Strategy)}",
+            Text = $"Strategy: {FireBoxRouteStrategies.Normalize(route.Strategy)}",
             Foreground = ConfigurationUiHelpers.SecondaryBrush(),
         });
         Grid.SetColumn(titlePanel, 0);
@@ -194,8 +194,8 @@ public sealed partial class RoutesPage : Page
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot,
-            MinWidth = 760,
         };
+        ConfigurationUiHelpers.ApplyDialogWidth(dialog, ConfigurationUiHelpers.GetResponsiveDialogWidth(XamlRoot));
 
         var content = new StackPanel
         {
@@ -235,9 +235,9 @@ public sealed partial class RoutesPage : Page
             Header = "Strategy",
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
-        strategyBox.Items.Add("Ordered");
-        strategyBox.Items.Add("Random");
-        strategyBox.SelectedItem = NormalizeStrategy(existing?.Strategy);
+        strategyBox.Items.Add(FireBoxRouteStrategies.Ordered);
+        strategyBox.Items.Add(FireBoxRouteStrategies.Random);
+        strategyBox.SelectedItem = existing is null ? null : FireBoxRouteStrategies.Normalize(existing.Strategy);
         content.Children.Add(strategyBox);
 
         var capabilitiesSection = new StackPanel
@@ -548,6 +548,15 @@ public sealed partial class RoutesPage : Page
                 return;
             }
 
+            var strategy = strategyBox.SelectedItem?.ToString();
+            if (string.IsNullOrWhiteSpace(strategy))
+            {
+                args.Cancel = true;
+                errorText.Text = "Strategy is required.";
+                errorText.Visibility = Visibility.Visible;
+                return;
+            }
+
             try
             {
                 var seenTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -573,7 +582,7 @@ public sealed partial class RoutesPage : Page
                 {
                     App.Connection.Control.AddRoute(
                         virtualModelId,
-                        strategyBox.SelectedItem?.ToString() ?? "Ordered",
+                        strategy,
                         candidatesJson,
                         reasoningCheck.IsChecked == true ? 1 : 0,
                         toolCallingCheck.IsChecked == true ? 1 : 0,
@@ -585,7 +594,7 @@ public sealed partial class RoutesPage : Page
                     App.Connection.Control.UpdateRoute(
                         existing.Id,
                         virtualModelId,
-                        strategyBox.SelectedItem?.ToString() ?? "Ordered",
+                        strategy,
                         candidatesJson,
                         reasoningCheck.IsChecked == true ? 1 : 0,
                         toolCallingCheck.IsChecked == true ? 1 : 0,
@@ -678,9 +687,6 @@ public sealed partial class RoutesPage : Page
         if ((mask & ModelMediaFormatMask.AudioBit) != 0) formats.Add("Audio");
         return formats.Count == 0 ? "Text only" : string.Join(", ", formats);
     }
-
-    private static string NormalizeStrategy(string? strategy) =>
-        string.Equals(strategy, "Random", StringComparison.OrdinalIgnoreCase) ? "Random" : "Ordered";
 
     private sealed class CandidateEditorState
     {

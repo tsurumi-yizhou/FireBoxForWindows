@@ -4,7 +4,7 @@ public interface IFireBoxConfigManager
 {
     string ListProviders();
     int AddProvider(string providerType, string name, string baseUrl, string apiKey);
-    void UpdateProvider(int id, string name, string baseUrl, string apiKey, string enabledModelIdsJson, bool isEnabled);
+    void UpdateProvider(int id, string name, string baseUrl, string apiKey, string enabledModelIdsJson);
     void DeleteProvider(int id);
     string FetchProviderModels(int providerId);
 

@@ -1,26 +1,21 @@
-using Core.Configuration;
-
 namespace Service.Providers;
 
 public sealed class ProviderBaseUrlNormalizer
 {
-    private readonly FireBoxServiceOptions _options;
-
-    public ProviderBaseUrlNormalizer(FireBoxServiceOptions options)
-    {
-        _options = options;
-    }
-
-    public string Normalize(string providerType, string? baseUrl)
+    public string Normalize(string? baseUrl)
     {
         if (string.IsNullOrWhiteSpace(baseUrl))
-            return _options.GetDefaultProviderBaseUrl(providerType);
+            throw new InvalidOperationException("Provider base URL is required.");
 
         var url = baseUrl.Trim();
-        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
-            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            url = "https://" + url;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed) ||
+            (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps) ||
+            string.IsNullOrWhiteSpace(parsed.Host))
+        {
+            throw new InvalidOperationException(
+                "Provider base URL must be an absolute http(s) URL. Include the full API base path explicitly.");
+        }
 
-        return url.TrimEnd('/');
+        return parsed.ToString().TrimEnd('/');
     }
 }

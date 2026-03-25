@@ -35,7 +35,7 @@ public sealed partial class ConnectionsPage : Page
 
         try
         {
-            var json = await Task.Run(() => App.Connection.Control.ListConnections());
+            var json = App.Connection.Control.ListConnections();
             var connections = JsonSerializer.Deserialize<List<ConnectionDto>>(json, ConfigurationUiHelpers.JsonOptions) ?? [];
             
             TotalCount.Text = connections.Count.ToString();

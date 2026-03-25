@@ -88,6 +88,7 @@ public sealed class FireBoxClient : IDisposable
                 attachmentsJson,
                 request.Temperature,
                 request.MaxOutputTokens,
+                (int)request.ReasoningEffort,
                 out var resultStruct);
 
             try
@@ -124,6 +125,7 @@ public sealed class FireBoxClient : IDisposable
                 attachmentsJson,
                 request.Temperature,
                 request.MaxOutputTokens,
+                (int)request.ReasoningEffort,
                 callback);
         }
         catch (Exception ex)

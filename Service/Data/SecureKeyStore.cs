@@ -15,7 +15,9 @@ public sealed class SecureKeyStore
 
     public string Decrypt(byte[] encryptedBytes)
     {
-        if (encryptedBytes.Length == 0) return string.Empty;
+        if (encryptedBytes.Length == 0)
+            throw new InvalidOperationException("Provider API key is missing.");
+
         var plainBytes = ProtectedData.Unprotect(encryptedBytes, null, DataProtectionScope.CurrentUser);
         return System.Text.Encoding.UTF8.GetString(plainBytes);
     }

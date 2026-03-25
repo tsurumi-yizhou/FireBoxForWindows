@@ -41,15 +41,14 @@ public sealed class FireBoxAiDispatcher : IFireBoxAiDispatcher
         foreach (var route in routes)
         {
             var candidates = _configRepo.GetCandidates(route);
-            var enabledModelIds = new HashSet<string>();
 
             var candidateInfos = candidates.Select(c =>
             {
                 var provider = providers.FirstOrDefault(p => p.Id == c.ProviderId);
-                if (provider is not null)
-                    enabledModelIds = _configRepo.GetEnabledModelIds(provider).ToHashSet();
-
-                var modelEnabled = enabledModelIds.Contains(c.ModelId);
+                var enabledModelIds = provider is not null
+                    ? _configRepo.GetEnabledModelIds(provider).ToHashSet(StringComparer.OrdinalIgnoreCase)
+                    : [];
+                var modelEnabled = provider is not null && enabledModelIds.Contains(c.ModelId);
                 var capSupported = CheckCapabilitySupported(provider?.ProviderType, route);
 
                 return new ModelCandidateInfo(
@@ -94,7 +93,7 @@ public sealed class FireBoxAiDispatcher : IFireBoxAiDispatcher
         {
             var response = await gateway.ChatCompletionAsync(
                 modelId, request.Messages, request.Attachments,
-                request.Temperature, request.MaxOutputTokens, ct);
+                request.Temperature, request.MaxOutputTokens, request.ReasoningEffort, ct);
 
             var result = response with { VirtualModelId = request.VirtualModelId, Selection = selection };
             await RecordUsageAsync(provider, modelId, result.Usage);
@@ -132,7 +131,7 @@ public sealed class FireBoxAiDispatcher : IFireBoxAiDispatcher
             var selection = new ProviderSelection(provider.Id, provider.ProviderType, provider.Name, modelId);
             var stream = gateway.ChatCompletionStreamAsync(
                 modelId, request.Messages, request.Attachments,
-                request.Temperature, request.MaxOutputTokens, ct);
+                request.Temperature, request.MaxOutputTokens, request.ReasoningEffort, ct);
 
             var fullContent = new System.Text.StringBuilder();
             var fullReasoning = new System.Text.StringBuilder();
@@ -272,9 +271,10 @@ public sealed class FireBoxAiDispatcher : IFireBoxAiDispatcher
         var providers = await _configRepo.ListProvidersAsync();
         var candidates = _configRepo.GetCandidates(route);
 
-        var orderedCandidates = string.Equals(route.Strategy, "Random", StringComparison.OrdinalIgnoreCase)
+        var orderedCandidates = string.Equals(route.Strategy, FireBoxRouteStrategies.Random, StringComparison.OrdinalIgnoreCase)
             ? candidates.OrderBy(_ => Random.Shared.Next()).ToList()
             : candidates;
+        var candidateErrors = new List<string>();
 
         foreach (var candidate in orderedCandidates)
         {
@@ -288,12 +288,32 @@ public sealed class FireBoxAiDispatcher : IFireBoxAiDispatcher
             // Check capability support
             if (!CheckCapabilitySupported(provider.ProviderType, route)) continue;
 
-            var apiKey = _keyStore.Decrypt(provider.EncryptedApiKey);
-            if (string.IsNullOrEmpty(apiKey)) continue;
+            string apiKey;
+            try
+            {
+                apiKey = _keyStore.Decrypt(provider.EncryptedApiKey);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Skipping provider {Provider}/{Model} because the API key could not be decrypted", provider.Name, candidate.ModelId);
+                candidateErrors.Add($"{provider.Name}/{candidate.ModelId}: {ex.Message}");
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                const string message = "Provider API key is empty.";
+                _logger.LogWarning("Skipping provider {Provider}/{Model}: {Message}", provider.Name, candidate.ModelId, message);
+                candidateErrors.Add($"{provider.Name}/{candidate.ModelId}: {message}");
+                continue;
+            }
 
             var gateway = _gatewayFactory.Create(provider.ProviderType, apiKey, provider.BaseUrl);
             return (gateway, provider, candidate.ModelId);
         }
+
+        if (candidateErrors.Count > 0)
+            throw new InvalidOperationException($"No available candidates for '{virtualModelId}'. {string.Join("; ", candidateErrors)}");
 
         throw new InvalidOperationException($"No available candidates for '{virtualModelId}'");
     }
@@ -307,25 +327,25 @@ public sealed class FireBoxAiDispatcher : IFireBoxAiDispatcher
 
         switch (providerType)
         {
-            case "Anthropic":
+            case FireBoxProviderTypes.Anthropic:
                 // Anthropic does not support function/tool calling
                 if (route.ToolCalling) return false;
                 // Anthropic supports image input but not video/audio
                 if ((route.InputFormatsMask & 0b110) != 0) return false; // video or audio
                 return true;
 
-            case "Gemini":
+            case FireBoxProviderTypes.Gemini:
                 // Gemini supports image/video via REST but not audio input well
                 if ((route.InputFormatsMask & 0b100) != 0) return false; // audio
                 return true;
 
-            case "OpenAI":
+            case FireBoxProviderTypes.OpenAI:
                 // OpenAI supports image input, not video/audio natively
                 if ((route.InputFormatsMask & 0b110) != 0) return false; // video or audio
                 return true;
 
             default:
-                return true;
+                return false;
         }
     }
 

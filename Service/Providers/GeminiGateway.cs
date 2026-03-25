@@ -13,7 +13,7 @@ public sealed class GeminiGateway : IProviderGateway
     private readonly HttpClient _http;
     private readonly string _apiKey;
     private readonly string _baseUrl;
-    public string ProviderType => "Gemini";
+    public string ProviderType => FireBoxProviderTypes.Gemini;
 
     public GeminiGateway(string apiKey, string baseUrl, HttpClient http)
     {
@@ -50,7 +50,7 @@ public sealed class GeminiGateway : IProviderGateway
 
         return new ChatCompletionResponse(
             string.Empty, new ChatMessage("assistant", text), null,
-            new ProviderSelection(0, "Gemini", string.Empty, modelId),
+            new ProviderSelection(0, FireBoxProviderTypes.Gemini, string.Empty, modelId),
             usage, "stop");
     }
 
@@ -151,6 +151,12 @@ public sealed class GeminiGateway : IProviderGateway
         List<ChatMessage> messages, List<ChatAttachment>? _,
         float temperature, int maxOutputTokens)
     {
+        if (temperature < 0)
+            throw new InvalidOperationException("Gemini requests require an explicit temperature value.");
+
+        if (maxOutputTokens <= 0)
+            throw new InvalidOperationException("Gemini requests require an explicit maxOutputTokens value.");
+
         var contents = messages.Select(m =>
         {
             var parts = new List<object> { new { text = m.Content } };
@@ -187,7 +193,7 @@ public sealed class GeminiGateway : IProviderGateway
             generationConfig = new
             {
                 temperature,
-                maxOutputTokens = maxOutputTokens > 0 ? maxOutputTokens : (int?)null,
+                maxOutputTokens,
             },
         };
     }

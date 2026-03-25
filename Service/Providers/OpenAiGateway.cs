@@ -13,7 +13,7 @@ public sealed class OpenAiGateway : IProviderGateway
 {
     private readonly OpenAIClient _client;
     private readonly string _baseUrl;
-    public string ProviderType => "OpenAI";
+    public string ProviderType => FireBoxProviderTypes.OpenAI;
 
     public OpenAiGateway(string apiKey, string baseUrl)
     {
@@ -41,7 +41,7 @@ public sealed class OpenAiGateway : IProviderGateway
             string.Empty,
             new CoreChatMessage("assistant", text),
             null,
-            new ProviderSelection(0, "OpenAI", string.Empty, modelId),
+            new ProviderSelection(0, FireBoxProviderTypes.OpenAI, string.Empty, modelId),
             new Usage(value.Usage.InputTokenCount, value.Usage.OutputTokenCount,
                 value.Usage.InputTokenCount + value.Usage.OutputTokenCount),
             value.FinishReason.ToString() ?? "stop");
@@ -88,7 +88,7 @@ public sealed class OpenAiGateway : IProviderGateway
 
         return new EmbeddingResponse(
             string.Empty, embeddings,
-            new ProviderSelection(0, "OpenAI", string.Empty, modelId),
+            new ProviderSelection(0, FireBoxProviderTypes.OpenAI, string.Empty, modelId),
             new Usage(result.Value.Usage.InputTokenCount, 0, result.Value.Usage.InputTokenCount));
     }
 
@@ -113,7 +113,7 @@ public sealed class OpenAiGateway : IProviderGateway
 
         return new FunctionCallResponse(
             string.Empty, text,
-            new ProviderSelection(0, "OpenAI", string.Empty, modelId),
+            new ProviderSelection(0, FireBoxProviderTypes.OpenAI, string.Empty, modelId),
             new Usage(value.Usage.InputTokenCount, value.Usage.OutputTokenCount,
                 value.Usage.InputTokenCount + value.Usage.OutputTokenCount),
             value.FinishReason.ToString() ?? "stop");
@@ -137,10 +137,17 @@ public sealed class OpenAiGateway : IProviderGateway
 
     private static ChatCompletionOptions BuildOptions(float temperature, int maxOutputTokens)
     {
-        var opts = new ChatCompletionOptions();
-        if (temperature >= 0) opts.Temperature = temperature;
-        if (maxOutputTokens > 0) opts.MaxOutputTokenCount = maxOutputTokens;
-        return opts;
+        if (temperature < 0)
+            throw new InvalidOperationException("OpenAI requests require an explicit temperature value.");
+
+        if (maxOutputTokens <= 0)
+            throw new InvalidOperationException("OpenAI requests require an explicit maxOutputTokens value.");
+
+        return new ChatCompletionOptions
+        {
+            Temperature = temperature,
+            MaxOutputTokenCount = maxOutputTokens,
+        };
     }
 
     private static List<OpenAI.Chat.ChatMessage> ConvertMessages(

@@ -8,11 +8,11 @@ public interface IProviderGateway
 
     Task<ChatCompletionResponse> ChatCompletionAsync(
         string modelId, List<ChatMessage> messages, List<ChatAttachment>? attachments,
-        float temperature, int maxOutputTokens, CancellationToken ct);
+        float temperature, int maxOutputTokens, FireBoxReasoningEffort reasoningEffort, CancellationToken ct);
 
     IAsyncEnumerable<StreamChunk> ChatCompletionStreamAsync(
         string modelId, List<ChatMessage> messages, List<ChatAttachment>? attachments,
-        float temperature, int maxOutputTokens, CancellationToken ct);
+        float temperature, int maxOutputTokens, FireBoxReasoningEffort reasoningEffort, CancellationToken ct);
 
     Task<EmbeddingResponse> CreateEmbeddingsAsync(
         string modelId, List<string> input, CancellationToken ct);

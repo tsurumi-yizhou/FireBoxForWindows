@@ -1,10 +1,8 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 using System.Text.Json;
-using Core.Configuration;
 using Core.Com.Structs;
 using Core.Dispatch;
 using Core.Models;
@@ -69,10 +67,6 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
         ServiceProvider?.GetRequiredService<IFireBoxConfigManager>()
         ?? throw new InvalidOperationException("Service not initialized.");
 
-    private FireBoxServiceOptions GetServiceOptions() =>
-        ServiceProvider?.GetRequiredService<FireBoxServiceOptions>()
-        ?? throw new InvalidOperationException("Service options not initialized.");
-
     /// <summary>
     /// Gets the real caller PID via CoGetCallContext / RPC_CALL_ATTRIBUTES for out-of-proc COM.
     /// Returns null if RPC info is unavailable — callers must treat this as an auth failure.
@@ -136,8 +130,7 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
             mgr.RecordClientAccess(pid, _processName, _executablePath);
             ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.RegisterClient", $"pid={pid}, process={_processName}, path={_executablePath}");
 
-            if (!IsTrustedFirstPartyClient(_processName, _executablePath) &&
-                !mgr.IsClientAllowed(_processName, _executablePath))
+            if (!mgr.IsClientAllowed(_processName, _executablePath))
             {
                 ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.AccessDenied", $"pid={pid}, process={_processName}, path={_executablePath}");
                 throw new UnauthorizedAccessException($"Client '{_processName}' ({_executablePath}) is not allowed. An administrator must approve this client.");
@@ -149,8 +142,7 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
         }
         else
         {
-            if (!IsTrustedFirstPartyClient(_processName, _executablePath) &&
-                !mgr.IsClientAllowed(_processName, _executablePath))
+            if (!mgr.IsClientAllowed(_processName, _executablePath))
             {
                 ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.AccessDenied", $"connectionId={_connectionId}, process={_processName}, path={_executablePath}");
                 throw new UnauthorizedAccessException($"Client '{_processName}' ({_executablePath}) is not allowed.");
@@ -158,14 +150,6 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
         }
 
         mgr.IncrementRequestCount(_connectionId);
-    }
-
-    private bool IsTrustedFirstPartyClient(string processName, string executablePath)
-    {
-        if (string.IsNullOrWhiteSpace(processName))
-            return false;
-
-        return GetServiceOptions().IsTrustedClientProcessName(processName);
     }
 
     private void UpdateConnectionStreamState(bool hasActiveStream)
@@ -262,14 +246,20 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
         string? attachmentsJson,
         float temperature,
         int maxOutputTokens,
+        int reasoningEffort,
         out ChatCompletionResultStruct result)
     {
         EnsureRegisteredAndAllowed();
-        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.ChatCompletion", $"connectionId={_connectionId}, virtualModelId={virtualModelId}, temperature={temperature}, maxOutputTokens={maxOutputTokens}");
+        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.ChatCompletion", $"connectionId={_connectionId}, virtualModelId={virtualModelId}, temperature={temperature}, maxOutputTokens={maxOutputTokens}, reasoningEffort={reasoningEffort}");
         var dispatcher = GetDispatcher();
         var messages = DeserializeMessagesWithAttachments(messagesJson, attachmentsJson);
-
-        var request = new ChatCompletionRequest(virtualModelId, messages, null, temperature, maxOutputTokens);
+        var request = new ChatCompletionRequest(
+            virtualModelId,
+            messages,
+            null,
+            temperature,
+            maxOutputTokens,
+            FireBoxReasoningEfforts.Normalize(reasoningEffort));
 
         try
         {
@@ -288,17 +278,24 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
         string? attachmentsJson,
         float temperature,
         int maxOutputTokens,
+        int reasoningEffort,
         IFireBoxStreamCallback callback)
     {
         EnsureRegisteredAndAllowed();
         var requestId = Interlocked.Increment(ref s_nextRequestId);
-        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.StartChatCompletionStream", $"connectionId={_connectionId}, requestId={requestId}, virtualModelId={virtualModelId}, temperature={temperature}, maxOutputTokens={maxOutputTokens}");
+        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.StartChatCompletionStream", $"connectionId={_connectionId}, requestId={requestId}, virtualModelId={virtualModelId}, temperature={temperature}, maxOutputTokens={maxOutputTokens}, reasoningEffort={reasoningEffort}");
         var cts = new CancellationTokenSource();
         s_activeStreams[requestId] = cts;
 
         var dispatcher = GetDispatcher();
         var messages = DeserializeMessagesWithAttachments(messagesJson, attachmentsJson);
-        var request = new ChatCompletionRequest(virtualModelId, messages, null, temperature, maxOutputTokens);
+        var request = new ChatCompletionRequest(
+            virtualModelId,
+            messages,
+            null,
+            temperature,
+            maxOutputTokens,
+            FireBoxReasoningEfforts.Normalize(reasoningEffort));
 
         Interlocked.Increment(ref _activeStreamCount);
         UpdateConnectionStreamState(true);

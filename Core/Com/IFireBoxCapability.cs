@@ -37,6 +37,7 @@ public partial interface IFireBoxCapability
         [MarshalAs(UnmanagedType.BStr)] string? attachmentsJson,
         float temperature,
         int maxOutputTokens,
+        int reasoningEffort,
         out ChatCompletionResultStruct result);
 
     long StartChatCompletionStream(
@@ -45,6 +46,7 @@ public partial interface IFireBoxCapability
         [MarshalAs(UnmanagedType.BStr)] string? attachmentsJson,
         float temperature,
         int maxOutputTokens,
+        int reasoningEffort,
         IFireBoxStreamCallback callback);
 
     void CancelChatCompletion(long requestId);

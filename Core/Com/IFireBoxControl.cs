@@ -45,8 +45,7 @@ public partial interface IFireBoxControl
         [MarshalAs(UnmanagedType.BStr)] string name,
         [MarshalAs(UnmanagedType.BStr)] string baseUrl,
         [MarshalAs(UnmanagedType.BStr)] string apiKey,
-        [MarshalAs(UnmanagedType.BStr)] string enabledModelIdsJson,
-        int isEnabled);
+        [MarshalAs(UnmanagedType.BStr)] string enabledModelIdsJson);
 
     void DeleteProvider(int providerId);
 

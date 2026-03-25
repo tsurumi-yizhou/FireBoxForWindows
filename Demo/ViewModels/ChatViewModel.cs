@@ -335,9 +335,6 @@ public partial class ChatViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            if (IsStreamingUnsupported(ex) && await TryRunNonStreamingFallbackAsync(request, assistantMsg))
-                return;
-
             _dispatcherQueue.TryEnqueue(() =>
             {
                 var requestError = BuildFriendlyError(ex, "Request");
@@ -354,45 +351,6 @@ public partial class ChatViewModel : ObservableObject
             IsStreaming = false;
             _streamCts?.Dispose();
             _streamCts = null;
-        }
-    }
-
-    private async Task<bool> TryRunNonStreamingFallbackAsync(ChatCompletionRequest request, ChatUiMessage assistantMsg)
-    {
-        if (_client is null)
-            return false;
-
-        try
-        {
-            var result = await Task.Run(() => _client.ChatCompletion(request));
-
-            _dispatcherQueue.TryEnqueue(() =>
-            {
-                assistantMsg.IsStreaming = false;
-
-                if (result.IsSuccess && result.Response is not null)
-                {
-                    assistantMsg.Content = result.Response.Message.Content;
-                    Error = null;
-                    SetFeedback(InfoBarSeverity.Warning, "Streaming is not supported by this route. Returned non-streaming response.");
-                }
-                else
-                {
-                    var fallbackError = result.Error?.Message ?? "No response from Service.";
-                    assistantMsg.ErrorMessage = fallbackError;
-                    assistantMsg.Content = $"[Request failed] {fallbackError}";
-                    Error = fallbackError;
-                    SetFeedback(InfoBarSeverity.Error, fallbackError);
-                }
-
-                PersistActiveConversation();
-            });
-
-            return true;
-        }
-        catch
-        {
-            return false;
         }
     }
 
@@ -472,14 +430,6 @@ public partial class ChatViewModel : ObservableObject
             return $"{operation} failed: Service is unreachable (RPC server unavailable).";
 
         return $"{operation} failed: {ex.Message}";
-    }
-
-    private static bool IsStreamingUnsupported(Exception ex)
-    {
-        if (ex is NotSupportedException)
-            return true;
-
-        return ex.Message.Contains("specified method is not supported", StringComparison.OrdinalIgnoreCase);
     }
 
     private void SetFeedback(InfoBarSeverity severity, string? message)

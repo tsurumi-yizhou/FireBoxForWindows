@@ -33,14 +33,16 @@ internal static class ConfigurationUiHelpers
 
     public static double GetResponsiveDialogWidth(
         XamlRoot? xamlRoot,
-        double minWidth,
-        double preferredFraction = 0.68,
-        double maxFraction = 0.75,
-        double edgePadding = 96)
+        double minWidth = 420)
     {
         var rootWidth = xamlRoot?.Size.Width ?? 1600;
-        var maxWidth = Math.Max(minWidth, Math.Min(rootWidth * maxFraction, rootWidth - edgePadding));
-        return Math.Max(minWidth, Math.Min(rootWidth * preferredFraction, maxWidth));
+        return Math.Max(minWidth, rootWidth * 0.618);
+    }
+
+    public static void ApplyDialogWidth(ContentDialog dialog, double width)
+    {
+        dialog.Resources["ContentDialogMinWidth"] = width;
+        dialog.Resources["ContentDialogMaxWidth"] = width;
     }
 
     public static async Task ShowMessageDialogAsync(XamlRoot xamlRoot, string title, string message)

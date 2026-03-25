@@ -3,6 +3,7 @@ using System.Text.Json;
 using Core.Com;
 using Core.Configuration;
 using Core.Dispatch;
+using Core.Models;
 using Service.Data;
 using Service.Data.Entities;
 using Service.Providers;
@@ -14,6 +15,7 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
     private readonly FireBoxConfigRepository _configRepo;
     private readonly FireBoxStatsRepository _statsRepo;
     private readonly ProviderModelFetcher _modelFetcher;
+    private readonly ProviderBaseUrlNormalizer _baseUrlNormalizer;
     private readonly ConnectionStateHolder _connections;
     private readonly FireBoxServiceOptions _serviceOptions;
 
@@ -21,12 +23,14 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
         FireBoxConfigRepository configRepo,
         FireBoxStatsRepository statsRepo,
         ProviderModelFetcher modelFetcher,
+        ProviderBaseUrlNormalizer baseUrlNormalizer,
         ConnectionStateHolder connections,
         FireBoxServiceOptions serviceOptions)
     {
         _configRepo = configRepo;
         _statsRepo = statsRepo;
         _modelFetcher = modelFetcher;
+        _baseUrlNormalizer = baseUrlNormalizer;
         _connections = connections;
         _serviceOptions = serviceOptions;
     }
@@ -37,28 +41,26 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
         return JsonSerializer.Serialize(providers.Select(p => new
         {
             p.Id, p.ProviderType, p.Name, p.BaseUrl,
-            p.IsEnabled,
             EnabledModelIds = _configRepo.GetEnabledModelIds(p),
             p.CreatedAt, p.UpdatedAt,
         }));
     }
 
     public int AddProvider(string providerType, string name, string baseUrl, string apiKey) =>
-        Execute("AddProvider", $"providerType={providerType}, name={name}, baseUrl={(string.IsNullOrWhiteSpace(baseUrl) ? "<default>" : baseUrl)}", () =>
-            _configRepo.AddProviderAsync(providerType, name, baseUrl, apiKey).GetAwaiter().GetResult());
+        Execute("AddProvider", $"providerType={providerType}, name={name}, baseUrl={(string.IsNullOrWhiteSpace(baseUrl) ? "<empty>" : baseUrl)}", () =>
+            _configRepo.AddProviderAsync(providerType, name, NormalizeRequiredBaseUrl(baseUrl), apiKey).GetAwaiter().GetResult());
 
-    public void UpdateProvider(int id, string name, string baseUrl, string apiKey, string enabledModelIdsJson, bool isEnabled)
+    public void UpdateProvider(int id, string name, string baseUrl, string apiKey, string enabledModelIdsJson)
     {
         var enabledModelIds = string.IsNullOrEmpty(enabledModelIdsJson)
             ? null
             : JsonSerializer.Deserialize<List<string>>(enabledModelIdsJson);
-        Execute("UpdateProvider", $"id={id}, name={name}, baseUrl={baseUrl}, apiKeyProvided={!string.IsNullOrWhiteSpace(apiKey)}, enabledModelCount={enabledModelIds?.Count ?? 0}, isEnabled={isEnabled}", () =>
+        Execute("UpdateProvider", $"id={id}, name={name}, baseUrl={baseUrl}, apiKeyProvided={!string.IsNullOrWhiteSpace(apiKey)}, enabledModelCount={enabledModelIds?.Count ?? 0}", () =>
             _configRepo.UpdateProviderAsync(id,
                 string.IsNullOrEmpty(name) ? null : name,
-                string.IsNullOrEmpty(baseUrl) ? null : baseUrl,
+                string.IsNullOrEmpty(baseUrl) ? null : NormalizeRequiredBaseUrl(baseUrl),
                 string.IsNullOrEmpty(apiKey) ? null : apiKey,
-                enabledModelIds,
-                isEnabled).GetAwaiter().GetResult());
+                enabledModelIds).GetAwaiter().GetResult());
     }
 
     public void DeleteProvider(int id) =>
@@ -81,7 +83,7 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
         var routes = _configRepo.ListRoutesAsync().GetAwaiter().GetResult();
         return JsonSerializer.Serialize(routes.Select(r => new
         {
-            r.Id, r.VirtualModelId, Strategy = NormalizeRouteStrategy(r.Strategy),
+            r.Id, r.VirtualModelId, Strategy = FireBoxRouteStrategies.Normalize(r.Strategy),
             Candidates = _configRepo.GetCandidates(r),
             r.Reasoning, r.ToolCalling,
             r.InputFormatsMask, r.OutputFormatsMask,
@@ -95,7 +97,7 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
             _configRepo.AddRouteAsync(new RouteRuleEntity
             {
                 VirtualModelId = virtualModelId,
-                Strategy = NormalizeRouteStrategy(strategy),
+                Strategy = FireBoxRouteStrategies.Normalize(strategy),
                 CandidatesJson = candidatesJson ?? "[]",
                 Reasoning = reasoning,
                 ToolCalling = toolCalling,
@@ -110,7 +112,7 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
             {
                 Id = id,
                 VirtualModelId = virtualModelId,
-                Strategy = NormalizeRouteStrategy(strategy),
+                Strategy = FireBoxRouteStrategies.Normalize(strategy),
                 CandidatesJson = candidatesJson ?? "[]",
                 Reasoning = reasoning,
                 ToolCalling = toolCalling,
@@ -212,11 +214,11 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
         return true;
     }
 
-    private static string NormalizeRouteStrategy(string? strategy) =>
-        string.Equals(strategy, "Random", StringComparison.OrdinalIgnoreCase) ? "Random" : "Ordered";
-
     public void SetConnectionStreamState(long connectionId, bool hasActiveStream) =>
         _connections.SetStreamState(connectionId, hasActiveStream);
+
+    private string NormalizeRequiredBaseUrl(string baseUrl) =>
+        _baseUrlNormalizer.Normalize(baseUrl);
 
     private T Execute<T>(string operation, string details, Func<T> action)
     {

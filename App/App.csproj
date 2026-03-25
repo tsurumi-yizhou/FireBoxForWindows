@@ -4,7 +4,7 @@
         <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
         <TargetPlatformMinVersion>10.0.26100.0</TargetPlatformMinVersion>
         <RootNamespace>App</RootNamespace>
-        <ApplicationIcon>Assets\FireBox.ico</ApplicationIcon>
+        <ApplicationIcon>Assets\StoreLogo.scale-400.png</ApplicationIcon>
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <Platforms>x64</Platforms>
         <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>

@@ -55,7 +55,6 @@ public sealed class FireBoxConfigRepository
                 BaseUrl = baseUrl,
                 EncryptedApiKey = _keyStore.Encrypt(apiKey),
                 EnabledModelIdsJson = JsonSerializer.Serialize(enabledModelIds ?? []),
-                IsEnabled = true,
                 CreatedAt = DateTimeOffset.UtcNow,
                 UpdatedAt = DateTimeOffset.UtcNow,
             };
@@ -65,7 +64,7 @@ public sealed class FireBoxConfigRepository
         });
     }
 
-    public async Task UpdateProviderAsync(int id, string? name = null, string? baseUrl = null, string? apiKey = null, List<string>? enabledModelIds = null, bool? isEnabled = null)
+    public async Task UpdateProviderAsync(int id, string? name = null, string? baseUrl = null, string? apiKey = null, List<string>? enabledModelIds = null)
     {
         await _configurationStore.UpdateAsync<object?>(snapshot =>
         {
@@ -80,8 +79,6 @@ public sealed class FireBoxConfigRepository
                 entity.EncryptedApiKey = _keyStore.Encrypt(apiKey);
             if (enabledModelIds is not null)
                 entity.EnabledModelIdsJson = JsonSerializer.Serialize(enabledModelIds);
-            if (isEnabled.HasValue)
-                entity.IsEnabled = isEnabled.Value;
 
             entity.UpdatedAt = DateTimeOffset.UtcNow;
             return null;
@@ -299,7 +296,6 @@ public sealed class FireBoxConfigRepository
             BaseUrl = provider.BaseUrl,
             EncryptedApiKey = provider.EncryptedApiKey.ToArray(),
             EnabledModelIdsJson = provider.EnabledModelIdsJson,
-            IsEnabled = provider.IsEnabled,
             CreatedAt = provider.CreatedAt,
             UpdatedAt = provider.UpdatedAt,
         };

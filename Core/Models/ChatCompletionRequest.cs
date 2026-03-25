@@ -5,4 +5,5 @@ public sealed record ChatCompletionRequest(
     List<ChatMessage> Messages,
     List<ChatAttachment>? Attachments = null,
     float Temperature = -1f,
-    int MaxOutputTokens = -1);
+    int MaxOutputTokens = -1,
+    FireBoxReasoningEffort ReasoningEffort = FireBoxReasoningEffort.Default);

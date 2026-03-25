@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using App.Models;
+using Core.Models;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -156,7 +157,7 @@ public sealed partial class ProvidersPage : Page
             return;
         }
 
-        var dialogWidth = ConfigurationUiHelpers.GetResponsiveDialogWidth(XamlRoot, 420, preferredFraction: 0.62, maxFraction: 0.7);
+        var dialogWidth = ConfigurationUiHelpers.GetResponsiveDialogWidth(XamlRoot);
 
         var dialog = new ContentDialog
         {
@@ -165,14 +166,13 @@ public sealed partial class ProvidersPage : Page
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot,
-            MinWidth = dialogWidth,
-            MaxWidth = dialogWidth,
         };
+        ConfigurationUiHelpers.ApplyDialogWidth(dialog, dialogWidth);
 
         var form = new StackPanel
         {
             Spacing = 12,
-            MinWidth = Math.Max(420, dialogWidth - 96),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
         };
 
         var statusText = new TextBlock
@@ -190,11 +190,8 @@ public sealed partial class ProvidersPage : Page
             {
                 Header = "Provider Type",
                 HorizontalAlignment = HorizontalAlignment.Stretch,
+                ItemsSource = FireBoxProviderTypes.SupportedValues,
             };
-            providerTypeBox.Items.Add("OpenAI");
-            providerTypeBox.Items.Add("Anthropic");
-            providerTypeBox.Items.Add("Gemini");
-            providerTypeBox.SelectedIndex = 0;
             form.Children.Add(providerTypeBox);
         }
         else
@@ -218,7 +215,7 @@ public sealed partial class ProvidersPage : Page
         {
             Header = "Base URL",
             Text = existing?.BaseUrl ?? string.Empty,
-            PlaceholderText = "Enter full API base URL (include version path like /v1 or /v2), or leave empty for default",
+            PlaceholderText = "Enter the full API base URL (include version path like /v1 or /v2)",
         };
         form.Children.Add(urlBox);
         form.Children.Add(new TextBlock
@@ -252,6 +249,22 @@ public sealed partial class ProvidersPage : Page
                 return;
             }
 
+            if (existing is null && string.IsNullOrWhiteSpace(providerTypeBox?.SelectedItem?.ToString()))
+            {
+                args.Cancel = true;
+                statusText.Text = "Provider type is required.";
+                statusText.Visibility = Visibility.Visible;
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(baseUrl))
+            {
+                args.Cancel = true;
+                statusText.Text = "Base URL is required.";
+                statusText.Visibility = Visibility.Visible;
+                return;
+            }
+
             if (existing is null && string.IsNullOrWhiteSpace(apiKey))
             {
                 args.Cancel = true;
@@ -265,7 +278,7 @@ public sealed partial class ProvidersPage : Page
                 if (existing is null)
                 {
                     App.Connection.Control.AddProvider(
-                        providerTypeBox?.SelectedItem?.ToString() ?? "OpenAI",
+                        providerTypeBox!.SelectedItem!.ToString()!,
                         name,
                         baseUrl,
                         apiKey);
@@ -277,8 +290,7 @@ public sealed partial class ProvidersPage : Page
                         name,
                         baseUrl,
                         apiKey,
-                        string.Empty,
-                        1);
+                        string.Empty);
                 }
 
                 saved = true;
@@ -329,7 +341,7 @@ public sealed partial class ProvidersPage : Page
 
         var selectedModels = new HashSet<string>(provider.EnabledModelIds, StringComparer.OrdinalIgnoreCase);
 
-        var dialogWidth = ConfigurationUiHelpers.GetResponsiveDialogWidth(XamlRoot, 560, preferredFraction: 0.7, maxFraction: 0.75);
+        var dialogWidth = ConfigurationUiHelpers.GetResponsiveDialogWidth(XamlRoot);
 
         var dialog = new ContentDialog
         {
@@ -338,14 +350,12 @@ public sealed partial class ProvidersPage : Page
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot,
-            MinWidth = dialogWidth,
-            MaxWidth = dialogWidth,
         };
+        ConfigurationUiHelpers.ApplyDialogWidth(dialog, dialogWidth);
 
         var content = new StackPanel
         {
             Spacing = 12,
-            MinWidth = Math.Max(560, dialogWidth - 96),
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
 
@@ -509,8 +519,7 @@ public sealed partial class ProvidersPage : Page
                     string.Empty,
                     string.Empty,
                     string.Empty,
-                    enabledModelsJson,
-                    1);
+                    enabledModelsJson);
 
                 saved = true;
             }
@@ -660,7 +669,7 @@ public sealed partial class ProvidersPage : Page
         });
         panel.Children.Add(new TextBlock
         {
-            Text = $"Base URL: {(string.IsNullOrWhiteSpace(request.BaseUrl) ? "Default provider endpoint" : request.BaseUrl)}",
+            Text = $"Base URL: {(string.IsNullOrWhiteSpace(request.BaseUrl) ? "Missing base URL" : request.BaseUrl)}",
             TextWrapping = TextWrapping.Wrap,
         });
         panel.Children.Add(new TextBlock

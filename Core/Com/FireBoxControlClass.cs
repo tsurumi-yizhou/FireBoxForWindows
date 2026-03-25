@@ -70,12 +70,12 @@ public partial class FireBoxControlClass : IFireBoxControl
         Execute("ListProviders", null, manager => manager.ListProviders());
 
     public int AddProvider(string providerType, string name, string baseUrl, string apiKey) =>
-        Execute("AddProvider", $"providerType={providerType}, name={name}, baseUrl={(string.IsNullOrWhiteSpace(baseUrl) ? "<default>" : baseUrl)}", manager =>
+        Execute("AddProvider", $"providerType={providerType}, name={name}, baseUrl={(string.IsNullOrWhiteSpace(baseUrl) ? "<empty>" : baseUrl)}", manager =>
             manager.AddProvider(providerType, name, baseUrl, apiKey));
 
-    public void UpdateProvider(int providerId, string name, string baseUrl, string apiKey, string enabledModelIdsJson, int isEnabled) =>
-        Execute("UpdateProvider", $"providerId={providerId}, name={name}, baseUrl={baseUrl}, apiKeyProvided={!string.IsNullOrWhiteSpace(apiKey)}, enabledModelIdsJsonLength={enabledModelIdsJson?.Length ?? 0}, isEnabled={isEnabled}", manager =>
-            manager.UpdateProvider(providerId, name, baseUrl, apiKey, enabledModelIdsJson ?? string.Empty, isEnabled != 0));
+    public void UpdateProvider(int providerId, string name, string baseUrl, string apiKey, string enabledModelIdsJson) =>
+        Execute("UpdateProvider", $"providerId={providerId}, name={name}, baseUrl={baseUrl}, apiKeyProvided={!string.IsNullOrWhiteSpace(apiKey)}, enabledModelIdsJsonLength={enabledModelIdsJson?.Length ?? 0}", manager =>
+            manager.UpdateProvider(providerId, name, baseUrl, apiKey, enabledModelIdsJson ?? string.Empty));
 
     public void DeleteProvider(int providerId) =>
         Execute("DeleteProvider", $"providerId={providerId}", manager => manager.DeleteProvider(providerId));

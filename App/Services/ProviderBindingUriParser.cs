@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using App.Models;
+using Core.Models;
 
 namespace App.Services;
 
@@ -44,25 +45,23 @@ internal static class ProviderBindingUriParser
         var baseUrl = NormalizeBaseUrl(rawBaseUrl);
         var apiKey = rawApiKey?.Trim() ?? string.Empty;
 
-        if (string.IsNullOrWhiteSpace(baseUrl) && string.IsNullOrWhiteSpace(apiKey))
+        if (string.IsNullOrWhiteSpace(baseUrl))
         {
-            error = "Invalid FireBox link: either 'base_url' or 'api_key' must be provided.";
+            error = "Invalid FireBox link: 'base_url' is required and must be an absolute http(s) URL.";
             return false;
         }
 
         if (!TryResolveProviderType(rawType, baseUrl, out var providerType, out var providerDisplayName))
         {
-            error = "Invalid FireBox link: provider 'type' is unsupported and could not be inferred from 'base_url'.";
+            error = "Invalid FireBox link: provider 'type' is required unless the base URL clearly identifies a supported provider.";
             return false;
         }
 
-        var name = string.IsNullOrWhiteSpace(rawName)
-            ? BuildDefaultName(providerDisplayName, baseUrl)
-            : rawName.Trim();
+        var name = rawName?.Trim() ?? string.Empty;
 
         if (string.IsNullOrWhiteSpace(name))
         {
-            error = "Invalid FireBox link: provider name cannot be empty.";
+            error = "Invalid FireBox link: provider name is required.";
             return false;
         }
 
@@ -130,19 +129,19 @@ internal static class ProviderBindingUriParser
         switch (value.Trim().ToLowerInvariant())
         {
             case "openai":
-                providerType = "OpenAI";
-                providerDisplayName = "OpenAI";
+                providerType = FireBoxProviderTypes.OpenAI;
+                providerDisplayName = FireBoxProviderTypes.OpenAI;
                 return true;
             case "anthropic":
-                providerType = "Anthropic";
-                providerDisplayName = "Anthropic";
+                providerType = FireBoxProviderTypes.Anthropic;
+                providerDisplayName = FireBoxProviderTypes.Anthropic;
                 return true;
             case "gemini":
             case "google":
             case "googleai":
             case "google-ai":
-                providerType = "Gemini";
-                providerDisplayName = "Gemini";
+                providerType = FireBoxProviderTypes.Gemini;
+                providerDisplayName = FireBoxProviderTypes.Gemini;
                 return true;
             default:
                 providerType = string.Empty;
@@ -170,7 +169,12 @@ internal static class ProviderBindingUriParser
             return TryMapProviderType("gemini", out providerType, out providerDisplayName);
         }
 
-        return TryMapProviderType("openai", out providerType, out providerDisplayName);
+        if (normalized.Contains("openai", StringComparison.Ordinal))
+            return TryMapProviderType("openai", out providerType, out providerDisplayName);
+
+        providerType = string.Empty;
+        providerDisplayName = string.Empty;
+        return false;
     }
 
     private static string NormalizeBaseUrl(string? rawBaseUrl)
@@ -179,15 +183,12 @@ internal static class ProviderBindingUriParser
         if (string.IsNullOrWhiteSpace(trimmed))
             return string.Empty;
 
-        var candidate = trimmed.Contains("://", StringComparison.Ordinal)
-            ? trimmed
-            : $"https://{trimmed}";
-
-        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var parsed) ||
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var parsed) ||
             string.IsNullOrWhiteSpace(parsed.Scheme) ||
-            string.IsNullOrWhiteSpace(parsed.Host))
+            string.IsNullOrWhiteSpace(parsed.Host) ||
+            (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
         {
-            return trimmed;
+            return string.Empty;
         }
 
         var path = parsed.AbsolutePath.Trim('/');
@@ -198,13 +199,5 @@ internal static class ProviderBindingUriParser
         return string.IsNullOrWhiteSpace(path)
             ? $"{parsed.Scheme}://{authority}"
             : $"{parsed.Scheme}://{authority}/{path}";
-    }
-
-    private static string BuildDefaultName(string providerDisplayName, string baseUrl)
-    {
-        if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var parsed) && !string.IsNullOrWhiteSpace(parsed.Host))
-            return $"{providerDisplayName} - {parsed.Host}";
-
-        return providerDisplayName;
     }
 }
