@@ -329,21 +329,21 @@ public sealed partial class ChatPage : UserControl
         }
     }
 
-    private static ModelMediaFormat? ResolveMediaFormat(string extension)
+    private static MediaFormat? ResolveMediaFormat(string extension)
     {
-        if (s_imageExtensions.Contains(extension)) return ModelMediaFormat.Image;
-        if (s_videoExtensions.Contains(extension)) return ModelMediaFormat.Video;
-        if (s_audioExtensions.Contains(extension)) return ModelMediaFormat.Audio;
+        if (s_imageExtensions.Contains(extension)) return MediaFormat.Image;
+        if (s_videoExtensions.Contains(extension)) return MediaFormat.Video;
+        if (s_audioExtensions.Contains(extension)) return MediaFormat.Audio;
         return null;
     }
 
-    private static string GuessMimeType(ModelMediaFormat format, string extension)
+    private static string GuessMimeType(MediaFormat format, string extension)
     {
-        if (format == ModelMediaFormat.Image)
+        if (format == MediaFormat.Image)
             return extension.Equals(".png", StringComparison.OrdinalIgnoreCase) ? "image/png" : "image/jpeg";
-        if (format == ModelMediaFormat.Video)
+        if (format == MediaFormat.Video)
             return "video/mp4";
-        if (format == ModelMediaFormat.Audio)
+        if (format == MediaFormat.Audio)
             return "audio/mpeg";
         return "application/octet-stream";
     }
@@ -405,7 +405,7 @@ public sealed partial class ChatPage : UserControl
     }
 
     private sealed record PendingAttachment(
-        ModelMediaFormat MediaFormat,
+        MediaFormat MediaFormat,
         string MimeType,
         string FileName,
         string FilePath,

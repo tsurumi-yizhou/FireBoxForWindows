@@ -1,11 +1,15 @@
 using Core.Models;
+using System.Text.Json.Serialization;
 
 namespace Service.Data.Entities;
 
 public sealed class RouteRuleEntity
 {
     public int Id { get; set; }
-    public string VirtualModelId { get; set; } = string.Empty;
+    public string RouteId { get; set; } = string.Empty;
+    [JsonPropertyName("virtualModelId")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? LegacyVirtualModelId { get; set; }
     public string Strategy { get; set; } = string.Empty;
     public string CandidatesJson { get; set; } = "[]"; // JSON: [{ProviderId, ModelId}]
     public bool Reasoning { get; set; }

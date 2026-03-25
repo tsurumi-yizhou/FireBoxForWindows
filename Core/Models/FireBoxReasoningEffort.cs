@@ -1,37 +1,40 @@
 namespace Core.Models;
 
-public enum FireBoxReasoningEffort
+public enum ReasoningEffort
 {
     Default = 0,
     Low = 1,
     Medium = 2,
     High = 3,
+    Max = 4,
 }
 
-public static class FireBoxReasoningEfforts
+public static class ReasoningEfforts
 {
-    public static IReadOnlyList<FireBoxReasoningEffort> SupportedValues { get; } =
+    public static IReadOnlyList<ReasoningEffort> SupportedValues { get; } =
     [
-        FireBoxReasoningEffort.Default,
-        FireBoxReasoningEffort.Low,
-        FireBoxReasoningEffort.Medium,
-        FireBoxReasoningEffort.High,
+        ReasoningEffort.Default,
+        ReasoningEffort.Low,
+        ReasoningEffort.Medium,
+        ReasoningEffort.High,
+        ReasoningEffort.Max,
     ];
 
-    public static FireBoxReasoningEffort Normalize(int value)
+    public static ReasoningEffort Normalize(int value)
     {
-        if (Enum.IsDefined(typeof(FireBoxReasoningEffort), value))
-            return (FireBoxReasoningEffort)value;
+        if (Enum.IsDefined(typeof(ReasoningEffort), value))
+            return (ReasoningEffort)value;
 
-        throw new InvalidOperationException("Reasoning effort must be explicitly set to Default, Low, Medium, or High.");
+        throw new InvalidOperationException("Reasoning effort must be explicitly set to Default, Low, Medium, High, or Max.");
     }
 
-    public static string ToDisplayName(FireBoxReasoningEffort effort) => effort switch
+    public static string ToDisplayName(ReasoningEffort effort) => effort switch
     {
-        FireBoxReasoningEffort.Default => "Provider default",
-        FireBoxReasoningEffort.Low => "Low",
-        FireBoxReasoningEffort.Medium => "Medium",
-        FireBoxReasoningEffort.High => "High",
+        ReasoningEffort.Default => "Provider default",
+        ReasoningEffort.Low => "Low",
+        ReasoningEffort.Medium => "Medium",
+        ReasoningEffort.High => "High",
+        ReasoningEffort.Max => "Max",
         _ => throw new InvalidOperationException($"Unsupported reasoning effort '{effort}'."),
     };
 }

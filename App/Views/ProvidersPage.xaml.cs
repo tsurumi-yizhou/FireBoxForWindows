@@ -290,6 +290,7 @@ public sealed partial class ProvidersPage : Page
                         name,
                         baseUrl,
                         apiKey,
+                        string.IsNullOrEmpty(apiKey) ? 0 : 1,
                         string.Empty);
                 }
 
@@ -519,6 +520,7 @@ public sealed partial class ProvidersPage : Page
                     string.Empty,
                     string.Empty,
                     string.Empty,
+                    0,
                     enabledModelsJson);
 
                 saved = true;

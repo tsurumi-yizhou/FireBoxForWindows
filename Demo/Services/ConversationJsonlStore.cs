@@ -344,7 +344,7 @@ public sealed class ConversationJsonlStore
         bool IsStreaming);
 
     private sealed record AttachmentPayload(
-        ModelMediaFormat MediaFormat,
+        MediaFormat MediaFormat,
         string? MimeType,
         string? FileName,
         byte[]? Data,

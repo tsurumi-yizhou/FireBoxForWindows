@@ -7,12 +7,12 @@ public interface IProviderGateway
     string ProviderType { get; }
 
     Task<ChatCompletionResponse> ChatCompletionAsync(
-        string modelId, List<ChatMessage> messages, List<ChatAttachment>? attachments,
-        float temperature, int maxOutputTokens, FireBoxReasoningEffort reasoningEffort, CancellationToken ct);
+        string modelId, List<ChatMessage> messages,
+        float temperature, int maxOutputTokens, ReasoningEffort reasoningEffort, CancellationToken ct);
 
     IAsyncEnumerable<StreamChunk> ChatCompletionStreamAsync(
-        string modelId, List<ChatMessage> messages, List<ChatAttachment>? attachments,
-        float temperature, int maxOutputTokens, FireBoxReasoningEffort reasoningEffort, CancellationToken ct);
+        string modelId, List<ChatMessage> messages,
+        float temperature, int maxOutputTokens, ReasoningEffort reasoningEffort, CancellationToken ct);
 
     Task<EmbeddingResponse> CreateEmbeddingsAsync(
         string modelId, List<string> input, CancellationToken ct);

@@ -18,6 +18,8 @@ public partial interface IFireBoxControl
 
     void Shutdown();
 
+    int GetVersionCode();
+
     // --- Stats ---
 
     /// <summary>Returns JSON: { requestCount, promptTokens, completionTokens, totalTokens, estimatedCostUsd }</summary>
@@ -44,7 +46,8 @@ public partial interface IFireBoxControl
         int providerId,
         [MarshalAs(UnmanagedType.BStr)] string name,
         [MarshalAs(UnmanagedType.BStr)] string baseUrl,
-        [MarshalAs(UnmanagedType.BStr)] string apiKey,
+        [MarshalAs(UnmanagedType.BStr)] string? apiKey,
+        int apiKeyProvided,
         [MarshalAs(UnmanagedType.BStr)] string enabledModelIdsJson);
 
     void DeleteProvider(int providerId);
@@ -59,7 +62,7 @@ public partial interface IFireBoxControl
     string ListRoutes();
 
     int AddRoute(
-        [MarshalAs(UnmanagedType.BStr)] string virtualModelId,
+        [MarshalAs(UnmanagedType.BStr)] string routeId,
         [MarshalAs(UnmanagedType.BStr)] string strategy,
         [MarshalAs(UnmanagedType.BStr)] string candidatesJson,
         int reasoning, int toolCalling,
@@ -67,7 +70,7 @@ public partial interface IFireBoxControl
 
     void UpdateRoute(
         int routeId,
-        [MarshalAs(UnmanagedType.BStr)] string virtualModelId,
+        [MarshalAs(UnmanagedType.BStr)] string routeIdValue,
         [MarshalAs(UnmanagedType.BStr)] string strategy,
         [MarshalAs(UnmanagedType.BStr)] string candidatesJson,
         int reasoning, int toolCalling,

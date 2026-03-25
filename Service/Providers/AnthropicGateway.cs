@@ -22,8 +22,8 @@ public sealed class AnthropicGateway : IProviderGateway
     }
 
     public async Task<ChatCompletionResponse> ChatCompletionAsync(
-        string modelId, List<Core.Models.ChatMessage> messages, List<ChatAttachment>? attachments,
-        float temperature, int maxOutputTokens, CancellationToken ct)
+        string modelId, List<Core.Models.ChatMessage> messages,
+        float temperature, int maxOutputTokens, ReasoningEffort reasoningEffort, CancellationToken ct)
     {
         var (system, msgs) = ConvertMessages(messages);
         var param = CreateParams(modelId, msgs, system, temperature, maxOutputTokens);
@@ -33,8 +33,8 @@ public sealed class AnthropicGateway : IProviderGateway
     }
 
     public async IAsyncEnumerable<StreamChunk> ChatCompletionStreamAsync(
-        string modelId, List<Core.Models.ChatMessage> messages, List<ChatAttachment>? attachments,
-        float temperature, int maxOutputTokens, [EnumeratorCancellation] CancellationToken ct)
+        string modelId, List<Core.Models.ChatMessage> messages,
+        float temperature, int maxOutputTokens, ReasoningEffort reasoningEffort, [EnumeratorCancellation] CancellationToken ct)
     {
         var (system, msgs) = ConvertMessages(messages);
         var param = CreateParams(modelId, msgs, system, temperature, maxOutputTokens);
@@ -92,7 +92,6 @@ public sealed class AnthropicGateway : IProviderGateway
             modelId,
             new Core.Models.ChatMessage("assistant", text),
             null, // reasoning
-            new ProviderSelection(0, FireBoxProviderTypes.Anthropic, FireBoxProviderTypes.Anthropic, modelId),
             new Core.Models.Usage(resp.Usage?.InputTokens ?? 0, resp.Usage?.OutputTokens ?? 0,
                 (resp.Usage?.InputTokens ?? 0) + (resp.Usage?.OutputTokens ?? 0)),
             resp.StopReason?.ToString() ?? "stop");
@@ -105,20 +104,49 @@ public sealed class AnthropicGateway : IProviderGateway
         float temperature,
         int maxOutputTokens)
     {
-        var parameters = new MessageCreateParams
+        var normalizedSystem = string.IsNullOrWhiteSpace(system) ? null : system;
+        var normalizedMaxTokens = maxOutputTokens > 0 ? maxOutputTokens : 4096;
+
+        if (temperature >= 0 && normalizedSystem is string systemValue)
+        {
+            return new MessageCreateParams
+            {
+                Model = modelId,
+                Messages = messages,
+                MaxTokens = normalizedMaxTokens,
+                Temperature = temperature,
+                System = systemValue,
+            };
+        }
+
+        if (temperature >= 0)
+        {
+            return new MessageCreateParams
+            {
+                Model = modelId,
+                Messages = messages,
+                MaxTokens = normalizedMaxTokens,
+                Temperature = temperature,
+            };
+        }
+
+        if (normalizedSystem is string systemWithoutTemperature)
+        {
+            return new MessageCreateParams
+            {
+                Model = modelId,
+                Messages = messages,
+                MaxTokens = normalizedMaxTokens,
+                System = systemWithoutTemperature,
+            };
+        }
+
+        return new MessageCreateParams
         {
             Model = modelId,
             Messages = messages,
-            MaxTokens = maxOutputTokens > 0
-                ? maxOutputTokens
-                : throw new InvalidOperationException("Anthropic requests require an explicit maxOutputTokens value."),
-            Temperature = temperature >= 0
-                ? temperature
-                : throw new InvalidOperationException("Anthropic requests require an explicit temperature value."),
-            System = string.IsNullOrWhiteSpace(system) ? null : system,
+            MaxTokens = normalizedMaxTokens,
         };
-
-        return parameters;
     }
 
     private static (string? System, List<MessageParam> Messages) ConvertMessages(
@@ -141,7 +169,7 @@ public sealed class AnthropicGateway : IProviderGateway
                 var blocks = new List<ContentBlockParam>();
                 foreach (var att in msg.Attachments)
                 {
-                    if (att.MediaFormat == ModelMediaFormat.Image)
+                    if (att.MediaFormat == MediaFormat.Image)
                     {
                         blocks.Add(new ImageBlockParam
                         {

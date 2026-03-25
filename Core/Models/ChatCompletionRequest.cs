@@ -1,9 +1,8 @@
 namespace Core.Models;
 
 public sealed record ChatCompletionRequest(
-    string VirtualModelId,
+    string ModelId,
     List<ChatMessage> Messages,
-    List<ChatAttachment>? Attachments = null,
     float Temperature = -1f,
     int MaxOutputTokens = -1,
-    FireBoxReasoningEffort ReasoningEffort = FireBoxReasoningEffort.Default);
+    ReasoningEffort ReasoningEffort = ReasoningEffort.Default);

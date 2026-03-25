@@ -117,17 +117,17 @@ public sealed class FireBoxConfigRepository
     {
         return await _configurationStore.ReadAsync(snapshot =>
             snapshot.Routes
-                .OrderBy(static route => route.VirtualModelId, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(static route => route.RouteId, StringComparer.OrdinalIgnoreCase)
                 .Select(CloneRoute)
                 .ToList());
     }
 
-    public async Task<RouteRuleEntity?> GetRouteByVirtualModelIdAsync(string virtualModelId)
+    public async Task<RouteRuleEntity?> GetRouteByRouteIdAsync(string routeId)
     {
         return await _configurationStore.ReadAsync(snapshot =>
         {
             var route = snapshot.Routes.FirstOrDefault(route =>
-                string.Equals(route.VirtualModelId, virtualModelId, StringComparison.OrdinalIgnoreCase));
+                string.Equals(route.RouteId, routeId, StringComparison.OrdinalIgnoreCase));
             return route is null ? null : CloneRoute(route);
         });
     }
@@ -152,7 +152,7 @@ public sealed class FireBoxConfigRepository
             var entity = snapshot.Routes.FirstOrDefault(existing => existing.Id == route.Id)
                 ?? throw new KeyNotFoundException($"Route {route.Id} not found.");
 
-            entity.VirtualModelId = route.VirtualModelId;
+            entity.RouteId = route.RouteId;
             entity.Strategy = route.Strategy;
             entity.CandidatesJson = route.CandidatesJson;
             entity.Reasoning = route.Reasoning;
@@ -168,7 +168,7 @@ public sealed class FireBoxConfigRepository
     {
         await _configurationStore.UpdateAsync<object?>(snapshot =>
         {
-            snapshot.Routes.RemoveAll(route => route.Id == id);
+                snapshot.Routes.RemoveAll(route => route.Id == id);
             return null;
         });
     }
@@ -182,7 +182,7 @@ public sealed class FireBoxConfigRepository
         catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
             throw new InvalidOperationException(
-                $"Route '{route.VirtualModelId}' has invalid candidate targets JSON.",
+                $"Route '{route.RouteId}' has invalid candidate targets JSON.",
                 ex);
         }
     }
@@ -304,7 +304,7 @@ public sealed class FireBoxConfigRepository
         new()
         {
             Id = route.Id,
-            VirtualModelId = route.VirtualModelId,
+            RouteId = route.RouteId,
             Strategy = route.Strategy,
             CandidatesJson = route.CandidatesJson,
             Reasoning = route.Reasoning,

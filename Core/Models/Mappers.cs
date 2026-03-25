@@ -3,15 +3,10 @@ using Core.Com.Structs;
 
 namespace Core.Models;
 
-/// <summary>
-/// Converts between COM interop structs (IntPtr/BSTR) and high-level C# records.
-/// </summary>
 public static class Mappers
 {
-    // --- BSTR helpers ---
-
     private static string BstrToString(IntPtr bstr) =>
-        bstr == IntPtr.Zero ? string.Empty : Marshal.PtrToStringBSTR(bstr);
+        bstr == IntPtr.Zero ? string.Empty : Marshal.PtrToStringBSTR(bstr) ?? string.Empty;
 
     private static string? BstrToStringNullable(IntPtr bstr) =>
         bstr == IntPtr.Zero ? null : Marshal.PtrToStringBSTR(bstr);
@@ -19,322 +14,171 @@ public static class Mappers
     private static IntPtr StringToBstr(string? value) =>
         value is null ? IntPtr.Zero : Marshal.StringToBSTR(value);
 
-    // --- From COM struct → C# record ---
-
-    public static Usage ToModel(in UsageStruct s) =>
-        new(s.PromptTokens, s.CompletionTokens, s.TotalTokens);
-
-    public static ProviderSelection ToModel(in ProviderSelectionStruct s) =>
-        new(s.ProviderId, BstrToString(s.ProviderType), BstrToString(s.ProviderName), BstrToString(s.ModelId));
-
-    public static FireBoxError ToModel(in FireBoxErrorStruct s) =>
-        new(s.Code, BstrToString(s.Message), BstrToStringNullable(s.ProviderType), BstrToStringNullable(s.ProviderModelId));
-
-    public static ChatMessage ToModel(in ChatMessageStruct s) =>
-        new(BstrToString(s.Role), BstrToString(s.Content));
-
-    public static ChatAttachment ToModel(in ChatAttachmentStruct s) =>
-        new(
-            (ModelMediaFormat)s.MediaFormat,
-            BstrToString(s.MimeType),
-            BstrToStringNullable(s.FileName),
-            s.Base64Data != IntPtr.Zero ? Convert.FromBase64String(BstrToString(s.Base64Data)) : [],
-            s.SizeBytes);
-
-    public static VirtualModelInfo ToModel(in VirtualModelInfoStruct s) =>
-        new(
-            BstrToString(s.VirtualModelId),
-            BstrToString(s.Strategy),
-            new ModelCapabilities(
-                s.Reasoning != 0,
-                s.ToolCalling != 0,
-                ModelMediaFormatMask.FromMask(s.InputFormatsMask),
-                ModelMediaFormatMask.FromMask(s.OutputFormatsMask)),
-            [], // Candidates loaded separately via GetModelCandidates
-            s.Available != 0);
-
-    public static ModelCandidateInfo ToModel(in ModelCandidateInfoStruct s) =>
-        new(
-            s.ProviderId,
-            BstrToString(s.ProviderType),
-            BstrToString(s.ProviderName),
-            BstrToString(s.BaseUrl),
-            BstrToString(s.ModelId),
-            s.EnabledInConfig != 0,
-            s.CapabilitySupported != 0);
-
-    public static ChatCompletionResult ToModel(in ChatCompletionResultStruct s)
+    public static Result<ChatCompletionResponse> ToModel(in ChatCompletionResultStruct s)
     {
         if (s.HasResponse != 0)
         {
             var response = new ChatCompletionResponse(
-                BstrToString(s.VirtualModelId),
+                BstrToString(s.ModelId),
                 new ChatMessage(BstrToString(s.MessageRole), BstrToString(s.MessageContent)),
                 BstrToStringNullable(s.ReasoningText),
-                new ProviderSelection(
-                    s.SelectionProviderId,
-                    BstrToString(s.SelectionProviderType),
-                    BstrToString(s.SelectionProviderName),
-                    BstrToString(s.SelectionModelId)),
                 new Usage(s.UsagePromptTokens, s.UsageCompletionTokens, s.UsageTotalTokens),
                 BstrToString(s.FinishReason));
-            return new ChatCompletionResult(response, null);
+            return new Result<ChatCompletionResponse>(response, null);
         }
-        else
-        {
-            var error = new FireBoxError(
-                s.ErrorCode,
-                BstrToString(s.ErrorMessage),
-                BstrToStringNullable(s.ErrorProviderType),
-                BstrToStringNullable(s.ErrorProviderModelId));
-            return new ChatCompletionResult(null, error);
-        }
+
+        return new Result<ChatCompletionResponse>(null, BstrToString(s.ErrorMessage));
     }
 
-    public static EmbeddingResult ToModel(in EmbeddingResultStruct s)
+    public static Result<EmbeddingResponse> ToModel(in EmbeddingResultStruct s)
     {
         if (s.HasResponse != 0)
         {
+            var indices = NativeArrayMarshaller.ReadIntArray(s.IndicesArray);
+            var flatVectors = NativeArrayMarshaller.ReadFloatArray(s.FlatVectorsArray);
+            var embeddings = new List<Embedding>(s.EmbeddingCount);
+
+            if (s.VectorDimension > 0)
+            {
+                for (var i = 0; i < s.EmbeddingCount && i < indices.Length; i++)
+                {
+                    var vector = new float[s.VectorDimension];
+                    Array.Copy(flatVectors, i * s.VectorDimension, vector, 0, s.VectorDimension);
+                    embeddings.Add(new Embedding(indices[i], vector));
+                }
+            }
+
             var response = new EmbeddingResponse(
-                BstrToString(s.VirtualModelId),
-                [], // Vectors loaded separately via GetEmbeddingVectors
-                new ProviderSelection(
-                    s.SelectionProviderId,
-                    BstrToString(s.SelectionProviderType),
-                    BstrToString(s.SelectionProviderName),
-                    BstrToString(s.SelectionModelId)),
+                BstrToString(s.ModelId),
+                embeddings,
                 new Usage(s.UsagePromptTokens, s.UsageCompletionTokens, s.UsageTotalTokens));
-            return new EmbeddingResult(response, null);
+            return new Result<EmbeddingResponse>(response, null);
         }
-        else
-        {
-            var error = new FireBoxError(
-                s.ErrorCode,
-                BstrToString(s.ErrorMessage),
-                BstrToStringNullable(s.ErrorProviderType),
-                BstrToStringNullable(s.ErrorProviderModelId));
-            return new EmbeddingResult(null, error);
-        }
+
+        return new Result<EmbeddingResponse>(null, BstrToString(s.ErrorMessage));
     }
 
-    public static FunctionCallResult ToModel(in FunctionCallResultStruct s)
+    public static Result<FunctionCallResponse> ToModel(in FunctionCallResultStruct s)
     {
         if (s.HasResponse != 0)
         {
             var response = new FunctionCallResponse(
-                BstrToString(s.VirtualModelId),
+                BstrToString(s.ModelId),
                 BstrToString(s.OutputJson),
-                new ProviderSelection(
-                    s.SelectionProviderId,
-                    BstrToString(s.SelectionProviderType),
-                    BstrToString(s.SelectionProviderName),
-                    BstrToString(s.SelectionModelId)),
                 new Usage(s.UsagePromptTokens, s.UsageCompletionTokens, s.UsageTotalTokens),
                 BstrToString(s.FinishReason));
-            return new FunctionCallResult(response, null);
+            return new Result<FunctionCallResponse>(response, null);
+        }
+
+        return new Result<FunctionCallResponse>(null, BstrToString(s.ErrorMessage));
+    }
+
+    public static ChatCompletionResultStruct ToStruct(Result<ChatCompletionResponse> result)
+    {
+        var s = new ChatCompletionResultStruct();
+        if (result.Response is { } response)
+        {
+            s.HasResponse = -1;
+            s.ModelId = StringToBstr(response.ModelId);
+            s.MessageRole = StringToBstr(response.Message.Role);
+            s.MessageContent = StringToBstr(response.Message.Content);
+            s.ReasoningText = StringToBstr(response.ReasoningText);
+            s.UsagePromptTokens = response.Usage.PromptTokens;
+            s.UsageCompletionTokens = response.Usage.CompletionTokens;
+            s.UsageTotalTokens = response.Usage.TotalTokens;
+            s.FinishReason = StringToBstr(response.FinishReason);
         }
         else
         {
-            var error = new FireBoxError(
-                s.ErrorCode,
-                BstrToString(s.ErrorMessage),
-                BstrToStringNullable(s.ErrorProviderType),
-                BstrToStringNullable(s.ErrorProviderModelId));
-            return new FunctionCallResult(null, error);
-        }
-    }
-
-    // --- From C# record → COM struct ---
-
-    public static ChatMessageStruct ToStruct(ChatMessage m) =>
-        new() { Role = StringToBstr(m.Role), Content = StringToBstr(m.Content) };
-
-    public static ChatAttachmentStruct ToStruct(ChatAttachment a, int messageIndex) =>
-        new()
-        {
-            MessageIndex = messageIndex,
-            MediaFormat = (int)a.MediaFormat,
-            MimeType = StringToBstr(a.MimeType),
-            FileName = StringToBstr(a.FileName),
-            SizeBytes = a.SizeBytes,
-            Base64Data = StringToBstr(Convert.ToBase64String(a.Data)),
-        };
-
-    public static VirtualModelInfoStruct ToStruct(VirtualModelInfo m) =>
-        new()
-        {
-            VirtualModelId = StringToBstr(m.VirtualModelId),
-            Strategy = StringToBstr(m.Strategy),
-            Reasoning = (short)(m.Capabilities.Reasoning ? -1 : 0),
-            ToolCalling = (short)(m.Capabilities.ToolCalling ? -1 : 0),
-            InputFormatsMask = ModelMediaFormatMask.ToMask(m.Capabilities.InputFormats),
-            OutputFormatsMask = ModelMediaFormatMask.ToMask(m.Capabilities.OutputFormats),
-            Available = (short)(m.Available ? -1 : 0),
-        };
-
-    public static ModelCandidateInfoStruct ToStruct(ModelCandidateInfo c) =>
-        new()
-        {
-            ProviderId = c.ProviderId,
-            ProviderType = StringToBstr(c.ProviderType),
-            ProviderName = StringToBstr(c.ProviderName),
-            BaseUrl = StringToBstr(c.BaseUrl),
-            ModelId = StringToBstr(c.ModelId),
-            EnabledInConfig = (short)(c.EnabledInConfig ? -1 : 0),
-            CapabilitySupported = (short)(c.CapabilitySupported ? -1 : 0),
-        };
-
-    public static void FreeBstrFields(in ChatMessageStruct s)
-    {
-        Marshal.FreeBSTR(s.Role);
-        Marshal.FreeBSTR(s.Content);
-    }
-
-    public static void FreeBstrFields(in ChatAttachmentStruct s)
-    {
-        Marshal.FreeBSTR(s.MimeType);
-        Marshal.FreeBSTR(s.FileName);
-        Marshal.FreeBSTR(s.Base64Data);
-    }
-
-    public static void FreeBstrFields(in VirtualModelInfoStruct s)
-    {
-        Marshal.FreeBSTR(s.VirtualModelId);
-        Marshal.FreeBSTR(s.Strategy);
-    }
-
-    public static void FreeBstrFields(in ModelCandidateInfoStruct s)
-    {
-        Marshal.FreeBSTR(s.ProviderType);
-        Marshal.FreeBSTR(s.ProviderName);
-        Marshal.FreeBSTR(s.BaseUrl);
-        Marshal.FreeBSTR(s.ModelId);
-    }
-
-    public static ChatCompletionResultStruct ToStruct(ChatCompletionResult r)
-    {
-        var s = new ChatCompletionResultStruct();
-        if (r.Response is { } resp)
-        {
-            s.HasResponse = -1; // VARIANT_TRUE
-            s.VirtualModelId = StringToBstr(resp.VirtualModelId);
-            s.MessageRole = StringToBstr(resp.Message.Role);
-            s.MessageContent = StringToBstr(resp.Message.Content);
-            s.ReasoningText = StringToBstr(resp.ReasoningText);
-            s.SelectionProviderId = resp.Selection.ProviderId;
-            s.SelectionProviderType = StringToBstr(resp.Selection.ProviderType);
-            s.SelectionProviderName = StringToBstr(resp.Selection.ProviderName);
-            s.SelectionModelId = StringToBstr(resp.Selection.ModelId);
-            s.UsagePromptTokens = resp.Usage.PromptTokens;
-            s.UsageCompletionTokens = resp.Usage.CompletionTokens;
-            s.UsageTotalTokens = resp.Usage.TotalTokens;
-            s.FinishReason = StringToBstr(resp.FinishReason);
-        }
-        else if (r.Error is { } err)
-        {
             s.HasResponse = 0;
-            s.ErrorCode = err.Code;
-            s.ErrorMessage = StringToBstr(err.Message);
-            s.ErrorProviderType = StringToBstr(err.ProviderType);
-            s.ErrorProviderModelId = StringToBstr(err.ProviderModelId);
+            s.ErrorMessage = StringToBstr(result.Error);
         }
+
         return s;
     }
 
-    public static EmbeddingResultStruct ToStruct(EmbeddingResult r)
+    public static EmbeddingResultStruct ToStruct(Result<EmbeddingResponse> result)
     {
         var s = new EmbeddingResultStruct();
-        if (r.Response is { } resp)
+        if (result.Response is { } response)
         {
             s.HasResponse = -1;
-            s.VirtualModelId = StringToBstr(resp.VirtualModelId);
-            s.SelectionProviderId = resp.Selection.ProviderId;
-            s.SelectionProviderType = StringToBstr(resp.Selection.ProviderType);
-            s.SelectionProviderName = StringToBstr(resp.Selection.ProviderName);
-            s.SelectionModelId = StringToBstr(resp.Selection.ModelId);
-            s.UsagePromptTokens = resp.Usage.PromptTokens;
-            s.UsageCompletionTokens = resp.Usage.CompletionTokens;
-            s.UsageTotalTokens = resp.Usage.TotalTokens;
+            s.ModelId = StringToBstr(response.ModelId);
+            s.UsagePromptTokens = response.Usage.PromptTokens;
+            s.UsageCompletionTokens = response.Usage.CompletionTokens;
+            s.UsageTotalTokens = response.Usage.TotalTokens;
+            s.EmbeddingCount = response.Embeddings.Count;
+            s.VectorDimension = response.Embeddings.Count == 0 ? 0 : response.Embeddings[0].Vector.Length;
+
+            if (response.Embeddings.Count > 0)
+            {
+                s.IndicesArray = NativeArrayMarshaller.CreateIntArray(response.Embeddings.Select(static embedding => embedding.Index).ToArray());
+
+                var flatVectors = new List<float>(response.Embeddings.Count * s.VectorDimension);
+                foreach (var embedding in response.Embeddings)
+                    flatVectors.AddRange(embedding.Vector);
+                s.FlatVectorsArray = NativeArrayMarshaller.CreateFloatArray(flatVectors);
+            }
         }
-        else if (r.Error is { } err)
+        else
         {
             s.HasResponse = 0;
-            s.ErrorCode = err.Code;
-            s.ErrorMessage = StringToBstr(err.Message);
-            s.ErrorProviderType = StringToBstr(err.ProviderType);
-            s.ErrorProviderModelId = StringToBstr(err.ProviderModelId);
+            s.ErrorMessage = StringToBstr(result.Error);
         }
+
         return s;
     }
 
-    public static FunctionCallResultStruct ToStruct(FunctionCallResult r)
+    public static FunctionCallResultStruct ToStruct(Result<FunctionCallResponse> result)
     {
         var s = new FunctionCallResultStruct();
-        if (r.Response is { } resp)
+        if (result.Response is { } response)
         {
             s.HasResponse = -1;
-            s.VirtualModelId = StringToBstr(resp.VirtualModelId);
-            s.OutputJson = StringToBstr(resp.OutputJson);
-            s.SelectionProviderId = resp.Selection.ProviderId;
-            s.SelectionProviderType = StringToBstr(resp.Selection.ProviderType);
-            s.SelectionProviderName = StringToBstr(resp.Selection.ProviderName);
-            s.SelectionModelId = StringToBstr(resp.Selection.ModelId);
-            s.UsagePromptTokens = resp.Usage.PromptTokens;
-            s.UsageCompletionTokens = resp.Usage.CompletionTokens;
-            s.UsageTotalTokens = resp.Usage.TotalTokens;
-            s.FinishReason = StringToBstr(resp.FinishReason);
+            s.ModelId = StringToBstr(response.ModelId);
+            s.OutputJson = StringToBstr(response.OutputJson);
+            s.UsagePromptTokens = response.Usage.PromptTokens;
+            s.UsageCompletionTokens = response.Usage.CompletionTokens;
+            s.UsageTotalTokens = response.Usage.TotalTokens;
+            s.FinishReason = StringToBstr(response.FinishReason);
         }
-        else if (r.Error is { } err)
+        else
         {
             s.HasResponse = 0;
-            s.ErrorCode = err.Code;
-            s.ErrorMessage = StringToBstr(err.Message);
-            s.ErrorProviderType = StringToBstr(err.ProviderType);
-            s.ErrorProviderModelId = StringToBstr(err.ProviderModelId);
+            s.ErrorMessage = StringToBstr(result.Error);
         }
+
         return s;
     }
 
-    /// <summary>
-    /// Frees BSTR fields in a struct to prevent memory leaks.
-    /// Call after consuming a struct received from COM.
-    /// </summary>
     public static void FreeBstrFields(in ChatCompletionResultStruct s)
     {
-        Marshal.FreeBSTR(s.VirtualModelId);
+        Marshal.FreeBSTR(s.ModelId);
         Marshal.FreeBSTR(s.MessageRole);
         Marshal.FreeBSTR(s.MessageContent);
         Marshal.FreeBSTR(s.ReasoningText);
-        Marshal.FreeBSTR(s.SelectionProviderType);
-        Marshal.FreeBSTR(s.SelectionProviderName);
-        Marshal.FreeBSTR(s.SelectionModelId);
         Marshal.FreeBSTR(s.FinishReason);
         Marshal.FreeBSTR(s.ErrorMessage);
-        Marshal.FreeBSTR(s.ErrorProviderType);
-        Marshal.FreeBSTR(s.ErrorProviderModelId);
     }
 
     public static void FreeBstrFields(in EmbeddingResultStruct s)
     {
-        Marshal.FreeBSTR(s.VirtualModelId);
-        Marshal.FreeBSTR(s.SelectionProviderType);
-        Marshal.FreeBSTR(s.SelectionProviderName);
-        Marshal.FreeBSTR(s.SelectionModelId);
+        Marshal.FreeBSTR(s.ModelId);
         Marshal.FreeBSTR(s.ErrorMessage);
-        Marshal.FreeBSTR(s.ErrorProviderType);
-        Marshal.FreeBSTR(s.ErrorProviderModelId);
+    }
+
+    public static void FreeArraysAndBstrFields(in EmbeddingResultStruct s)
+    {
+        NativeArrayMarshaller.DestroyArray(s.IndicesArray);
+        NativeArrayMarshaller.DestroyArray(s.FlatVectorsArray);
+        FreeBstrFields(in s);
     }
 
     public static void FreeBstrFields(in FunctionCallResultStruct s)
     {
-        Marshal.FreeBSTR(s.VirtualModelId);
+        Marshal.FreeBSTR(s.ModelId);
         Marshal.FreeBSTR(s.OutputJson);
-        Marshal.FreeBSTR(s.SelectionProviderType);
-        Marshal.FreeBSTR(s.SelectionProviderName);
-        Marshal.FreeBSTR(s.SelectionModelId);
         Marshal.FreeBSTR(s.FinishReason);
         Marshal.FreeBSTR(s.ErrorMessage);
-        Marshal.FreeBSTR(s.ErrorProviderType);
-        Marshal.FreeBSTR(s.ErrorProviderModelId);
     }
 }

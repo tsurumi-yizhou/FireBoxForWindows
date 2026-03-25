@@ -16,7 +16,6 @@ public sealed record ChatStreamEvent(
     ChatStreamEventType Type,
     string? DeltaText = null,
     string? ReasoningText = null,
-    ProviderSelection? Selection = null,
     Usage? Usage = null,
     ChatCompletionResponse? Response = null,
-    FireBoxError? Error = null);
+    string? Error = null);

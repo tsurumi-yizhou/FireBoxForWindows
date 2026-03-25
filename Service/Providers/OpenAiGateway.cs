@@ -25,12 +25,12 @@ public sealed class OpenAiGateway : IProviderGateway
     }
 
     public async Task<ChatCompletionResponse> ChatCompletionAsync(
-        string modelId, List<CoreChatMessage> messages, List<ChatAttachment>? attachments,
-        float temperature, int maxOutputTokens, CancellationToken ct)
+        string modelId, List<CoreChatMessage> messages,
+        float temperature, int maxOutputTokens, ReasoningEffort reasoningEffort, CancellationToken ct)
     {
         var chatClient = _client.GetChatClient(modelId);
         var opts = BuildOptions(temperature, maxOutputTokens);
-        var oaiMessages = ConvertMessages(messages, attachments);
+        var oaiMessages = ConvertMessages(messages);
 
         var result = await chatClient.CompleteChatAsync(oaiMessages, opts, ct);
         var value = result.Value;
@@ -38,22 +38,21 @@ public sealed class OpenAiGateway : IProviderGateway
         var text = value.Content.FirstOrDefault(c => c.Kind == ChatMessageContentPartKind.Text)?.Text ?? string.Empty;
 
         return new ChatCompletionResponse(
-            string.Empty,
+            modelId,
             new CoreChatMessage("assistant", text),
             null,
-            new ProviderSelection(0, FireBoxProviderTypes.OpenAI, string.Empty, modelId),
             new Usage(value.Usage.InputTokenCount, value.Usage.OutputTokenCount,
                 value.Usage.InputTokenCount + value.Usage.OutputTokenCount),
             value.FinishReason.ToString() ?? "stop");
     }
 
     public async IAsyncEnumerable<StreamChunk> ChatCompletionStreamAsync(
-        string modelId, List<CoreChatMessage> messages, List<ChatAttachment>? attachments,
-        float temperature, int maxOutputTokens, [EnumeratorCancellation] CancellationToken ct)
+        string modelId, List<CoreChatMessage> messages,
+        float temperature, int maxOutputTokens, ReasoningEffort reasoningEffort, [EnumeratorCancellation] CancellationToken ct)
     {
         var chatClient = _client.GetChatClient(modelId);
         var opts = BuildOptions(temperature, maxOutputTokens);
-        var oaiMessages = ConvertMessages(messages, attachments);
+        var oaiMessages = ConvertMessages(messages);
 
         await foreach (var update in chatClient.CompleteChatStreamingAsync(oaiMessages, opts, ct))
         {
@@ -87,8 +86,7 @@ public sealed class OpenAiGateway : IProviderGateway
             new Embedding(i, e.ToFloats().ToArray())).ToList();
 
         return new EmbeddingResponse(
-            string.Empty, embeddings,
-            new ProviderSelection(0, FireBoxProviderTypes.OpenAI, string.Empty, modelId),
+            modelId, embeddings,
             new Usage(result.Value.Usage.InputTokenCount, 0, result.Value.Usage.InputTokenCount));
     }
 
@@ -112,8 +110,7 @@ public sealed class OpenAiGateway : IProviderGateway
         var text = value.Content.FirstOrDefault(c => c.Kind == ChatMessageContentPartKind.Text)?.Text ?? string.Empty;
 
         return new FunctionCallResponse(
-            string.Empty, text,
-            new ProviderSelection(0, FireBoxProviderTypes.OpenAI, string.Empty, modelId),
+            modelId, text,
             new Usage(value.Usage.InputTokenCount, value.Usage.OutputTokenCount,
                 value.Usage.InputTokenCount + value.Usage.OutputTokenCount),
             value.FinishReason.ToString() ?? "stop");
@@ -137,21 +134,19 @@ public sealed class OpenAiGateway : IProviderGateway
 
     private static ChatCompletionOptions BuildOptions(float temperature, int maxOutputTokens)
     {
-        if (temperature < 0)
-            throw new InvalidOperationException("OpenAI requests require an explicit temperature value.");
+        var options = new ChatCompletionOptions();
 
-        if (maxOutputTokens <= 0)
-            throw new InvalidOperationException("OpenAI requests require an explicit maxOutputTokens value.");
+        if (temperature >= 0)
+            options.Temperature = temperature;
 
-        return new ChatCompletionOptions
-        {
-            Temperature = temperature,
-            MaxOutputTokenCount = maxOutputTokens,
-        };
+        if (maxOutputTokens > 0)
+            options.MaxOutputTokenCount = maxOutputTokens;
+
+        return options;
     }
 
     private static List<OpenAI.Chat.ChatMessage> ConvertMessages(
-        List<CoreChatMessage> messages, List<ChatAttachment>? _)
+        List<CoreChatMessage> messages)
     {
         var result = new List<OpenAI.Chat.ChatMessage>();
         foreach (var msg in messages)
@@ -173,7 +168,7 @@ public sealed class OpenAiGateway : IProviderGateway
             {
                 foreach (var att in msg.Attachments)
                 {
-                    if (att.MediaFormat == ModelMediaFormat.Image)
+                    if (att.MediaFormat == MediaFormat.Image)
                     {
                         var dataUri = $"data:{att.MimeType};base64,{Convert.ToBase64String(att.Data)}";
                         parts.Add(ChatMessageContentPart.CreateImagePart(new Uri(dataUri)));

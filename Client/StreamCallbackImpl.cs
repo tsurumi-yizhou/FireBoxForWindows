@@ -27,18 +27,11 @@ internal sealed partial class StreamCallbackImpl : IFireBoxStreamCallback
         });
     }
 
-    public void OnStarted(
-        long requestId,
-        int selectionProviderId,
-        string selectionProviderType,
-        string selectionProviderName,
-        string selectionModelId)
+    public void OnStarted(long requestId)
     {
         _channel.Writer.TryWrite(new ChatStreamEvent(
             requestId,
-            ChatStreamEventType.Started,
-            Selection: new ProviderSelection(
-                selectionProviderId, selectionProviderType, selectionProviderName, selectionModelId)));
+            ChatStreamEventType.Started));
     }
 
     public void OnDelta(long requestId, string deltaText)
@@ -62,6 +55,7 @@ internal sealed partial class StreamCallbackImpl : IFireBoxStreamCallback
 
     public void OnCompleted(
         long requestId,
+        string modelId,
         string messageRole,
         string messageContent,
         string? reasoningText,
@@ -73,25 +67,19 @@ internal sealed partial class StreamCallbackImpl : IFireBoxStreamCallback
         _channel.Writer.TryWrite(new ChatStreamEvent(
             requestId, ChatStreamEventType.Completed,
             Response: new ChatCompletionResponse(
-                string.Empty, // VirtualModelId not available in callback
+                modelId,
                 new ChatMessage(messageRole, messageContent),
                 reasoningText,
-                new ProviderSelection(0, string.Empty, string.Empty, string.Empty),
                 new Usage(usagePromptTokens, usageCompletionTokens, usageTotalTokens),
                 finishReason)));
         _channel.Writer.TryComplete();
     }
 
-    public void OnError(
-        long requestId,
-        int errorCode,
-        string errorMessage,
-        string? errorProviderType,
-        string? errorProviderModelId)
+    public void OnError(long requestId, string error)
     {
         _channel.Writer.TryWrite(new ChatStreamEvent(
             requestId, ChatStreamEventType.Error,
-            Error: new FireBoxError(errorCode, errorMessage, errorProviderType, errorProviderModelId)));
+            Error: error));
         _channel.Writer.TryComplete();
     }
 

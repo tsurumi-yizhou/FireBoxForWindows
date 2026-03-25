@@ -23,10 +23,10 @@ public sealed class GeminiGateway : IProviderGateway
     }
 
     public async Task<ChatCompletionResponse> ChatCompletionAsync(
-        string modelId, List<ChatMessage> messages, List<ChatAttachment>? attachments,
-        float temperature, int maxOutputTokens, CancellationToken ct)
+        string modelId, List<ChatMessage> messages,
+        float temperature, int maxOutputTokens, ReasoningEffort reasoningEffort, CancellationToken ct)
     {
-        var body = BuildRequestBody(messages, attachments, temperature, maxOutputTokens);
+        var body = BuildRequestBody(messages, temperature, maxOutputTokens);
         var url = $"{_baseUrl}/v1beta/models/{modelId}:generateContent?key={_apiKey}";
 
         var response = await _http.PostAsync(url,
@@ -49,16 +49,15 @@ public sealed class GeminiGateway : IProviderGateway
             : new Usage(0, 0, 0);
 
         return new ChatCompletionResponse(
-            string.Empty, new ChatMessage("assistant", text), null,
-            new ProviderSelection(0, FireBoxProviderTypes.Gemini, string.Empty, modelId),
+            modelId, new ChatMessage("assistant", text), null,
             usage, "stop");
     }
 
     public async IAsyncEnumerable<StreamChunk> ChatCompletionStreamAsync(
-        string modelId, List<ChatMessage> messages, List<ChatAttachment>? attachments,
-        float temperature, int maxOutputTokens, [EnumeratorCancellation] CancellationToken ct)
+        string modelId, List<ChatMessage> messages,
+        float temperature, int maxOutputTokens, ReasoningEffort reasoningEffort, [EnumeratorCancellation] CancellationToken ct)
     {
-        var body = BuildRequestBody(messages, attachments, temperature, maxOutputTokens);
+        var body = BuildRequestBody(messages, temperature, maxOutputTokens);
         var url = $"{_baseUrl}/v1beta/models/{modelId}:streamGenerateContent?alt=sse&key={_apiKey}";
 
         var request = new HttpRequestMessage(HttpMethod.Post, url)
@@ -121,9 +120,9 @@ public sealed class GeminiGateway : IProviderGateway
         {
             new("user", $"{systemPrompt}\n\nInput:\n{inputJson}"),
         };
-        var resp = await ChatCompletionAsync(modelId, messages, null, temperature, maxOutputTokens, ct);
+        var resp = await ChatCompletionAsync(modelId, messages, temperature, maxOutputTokens, ReasoningEffort.Default, ct);
         return new FunctionCallResponse(
-            string.Empty, resp.Message.Content, resp.Selection, resp.Usage, resp.FinishReason);
+            modelId, resp.Message.Content, resp.Usage, resp.FinishReason);
     }
 
     public async Task<List<string>> ListModelsAsync(CancellationToken ct)
@@ -148,15 +147,9 @@ public sealed class GeminiGateway : IProviderGateway
     }
 
     private static object BuildRequestBody(
-        List<ChatMessage> messages, List<ChatAttachment>? _,
+        List<ChatMessage> messages,
         float temperature, int maxOutputTokens)
     {
-        if (temperature < 0)
-            throw new InvalidOperationException("Gemini requests require an explicit temperature value.");
-
-        if (maxOutputTokens <= 0)
-            throw new InvalidOperationException("Gemini requests require an explicit maxOutputTokens value.");
-
         var contents = messages.Select(m =>
         {
             var parts = new List<object> { new { text = m.Content } };
@@ -166,7 +159,7 @@ public sealed class GeminiGateway : IProviderGateway
             {
                 foreach (var att in m.Attachments)
                 {
-                    if (att.MediaFormat == ModelMediaFormat.Image)
+                    if (att.MediaFormat == MediaFormat.Image)
                     {
                         parts.Add(new
                         {
@@ -190,11 +183,21 @@ public sealed class GeminiGateway : IProviderGateway
         return new
         {
             contents,
-            generationConfig = new
-            {
-                temperature,
-                maxOutputTokens,
-            },
+            generationConfig = BuildGenerationConfig(temperature, maxOutputTokens),
         };
+    }
+
+    private static object BuildGenerationConfig(float temperature, int maxOutputTokens)
+    {
+        if (temperature >= 0 && maxOutputTokens > 0)
+            return new { temperature, maxOutputTokens };
+
+        if (temperature >= 0)
+            return new { temperature };
+
+        if (maxOutputTokens > 0)
+            return new { maxOutputTokens };
+
+        return new { };
     }
 }

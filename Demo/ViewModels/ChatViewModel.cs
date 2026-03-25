@@ -24,7 +24,7 @@ public partial class ChatViewModel : ObservableObject
     private readonly DispatcherQueue _dispatcherQueue;
     private long _messageIdCounter;
     private CancellationTokenSource? _streamCts;
-    private readonly Dictionary<string, VirtualModelInfo> _modelsById = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, ModelInfo> _modelsById = new(StringComparer.OrdinalIgnoreCase);
     private Conversation? _activeConversation;
 
     public ObservableCollection<Conversation> Conversations { get; } = [];
@@ -63,9 +63,9 @@ public partial class ChatViewModel : ObservableObject
         && !IsStreaming
         && IsConnected;
 
-    public bool SupportsImageInput => SupportsInputFormat(ModelMediaFormat.Image);
-    public bool SupportsVideoInput => SupportsInputFormat(ModelMediaFormat.Video);
-    public bool SupportsAudioInput => SupportsInputFormat(ModelMediaFormat.Audio);
+    public bool SupportsImageInput => SupportsInputFormat(MediaFormat.Image);
+    public bool SupportsVideoInput => SupportsInputFormat(MediaFormat.Video);
+    public bool SupportsAudioInput => SupportsInputFormat(MediaFormat.Audio);
     public bool SupportsAnyAttachmentInput => SupportsImageInput || SupportsVideoInput || SupportsAudioInput;
 
     public string SelectedModelInputFormatsLabel
@@ -78,9 +78,9 @@ public partial class ChatViewModel : ObservableObject
 
             return string.Join(", ", formats.Select(static format => format switch
             {
-                ModelMediaFormat.Image => "Image",
-                ModelMediaFormat.Video => "Video",
-                ModelMediaFormat.Audio => "Audio",
+                MediaFormat.Image => "Image",
+                MediaFormat.Video => "Video",
+                MediaFormat.Audio => "Audio",
                 _ => format.ToString(),
             }));
         }
@@ -138,20 +138,20 @@ public partial class ChatViewModel : ObservableObject
             AvailableModels.Clear();
             foreach (var model in models)
             {
-                AvailableModels.Add(model.VirtualModelId);
-                _modelsById[model.VirtualModelId] = model;
+                AvailableModels.Add(model.ModelId);
+                _modelsById[model.ModelId] = model;
             }
 
             if (AvailableModels.Count == 0)
             {
                 SelectedModelId = string.Empty;
-                Error = "No virtual models available. Configure at least one Route in App (Routes page), then ensure Demo is allowed and refresh.";
+                Error = "No models available. Configure at least one Route in App (Routes page), then ensure Demo is allowed and refresh.";
                 SetFeedback(InfoBarSeverity.Warning, Error);
                 return;
             }
 
             Error = null;
-            SetFeedback(InfoBarSeverity.Success, $"Loaded {AvailableModels.Count} virtual model{(AvailableModels.Count == 1 ? string.Empty : "s")}.");
+            SetFeedback(InfoBarSeverity.Success, $"Loaded {AvailableModels.Count} model{(AvailableModels.Count == 1 ? string.Empty : "s")}.");
             if (!string.IsNullOrWhiteSpace(previousSelection) && AvailableModels.Contains(previousSelection))
                 SelectedModelId = previousSelection;
             else
@@ -176,7 +176,7 @@ public partial class ChatViewModel : ObservableObject
         SetFeedback(severity, message);
     }
 
-    public bool SupportsInputFormat(ModelMediaFormat format)
+    public bool SupportsInputFormat(MediaFormat format)
     {
         if (!_modelsById.TryGetValue(SelectedModelId, out var model))
             return false;
@@ -184,7 +184,7 @@ public partial class ChatViewModel : ObservableObject
         return model.Capabilities.InputFormats?.Contains(format) == true;
     }
 
-    public IReadOnlyList<ModelMediaFormat> GetSelectedInputFormats()
+    public IReadOnlyList<MediaFormat> GetSelectedInputFormats()
     {
         if (!_modelsById.TryGetValue(SelectedModelId, out var model))
             return [];
@@ -305,7 +305,7 @@ public partial class ChatViewModel : ObservableObject
                             PersistActiveConversation();
                             break;
                         case ChatStreamEventType.Error:
-                            var streamError = evt.Error?.Message ?? "Unknown error";
+                            var streamError = evt.Error ?? "Unknown error";
                             assistantMsg.ErrorMessage = streamError;
                             assistantMsg.Content = $"[Request failed] {streamError}";
                             Error = streamError;

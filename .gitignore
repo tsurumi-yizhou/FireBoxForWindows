@@ -5,6 +5,7 @@ out/
 publish/
 artifacts/
 scripts/
+.dotnet/
 
 # Visual Studio
 .vs/

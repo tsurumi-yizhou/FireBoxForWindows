@@ -26,7 +26,7 @@ internal sealed class RouteCandidateDto
 internal sealed class RouteDto
 {
     public int Id { get; init; }
-    public string VirtualModelId { get; init; } = string.Empty;
+    public string RouteId { get; init; } = string.Empty;
     public string Strategy { get; init; } = string.Empty;
     public List<RouteCandidateDto> Candidates { get; init; } = [];
     public bool Reasoning { get; init; }

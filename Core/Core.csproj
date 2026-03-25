@@ -14,6 +14,7 @@
         <FireBoxMidlOutDir>$(MSBuildThisFileDirectory)obj\$(Platform)\$(Configuration)\$(TargetFramework)\midl</FireBoxMidlOutDir>
         <FireBoxTlb>$(FireBoxMidlOutDir)\FireBox.tlb</FireBoxTlb>
         <FireBoxWindowsSdkVersion Condition="'$(FireBoxWindowsSdkVersion)' == ''">10.0.26100.0</FireBoxWindowsSdkVersion>
+        <FireBoxCppCmd Condition="'$(FireBoxCppCmd)' == ''">cl.exe</FireBoxCppCmd>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(Configuration)' == 'Release'">
@@ -45,7 +46,7 @@
 
         <MakeDir Directories="$(FireBoxMidlOutDir)" />
         <Exec
-            Command="&quot;$(_MidlExe)&quot; /target NT100 /cpp_cmd cl.exe /I &quot;$(_MidlSdkDir)Include\$(FireBoxWindowsSdkVersion)\um&quot; /I &quot;$(_MidlSdkDir)Include\$(FireBoxWindowsSdkVersion)\shared&quot; /I &quot;$(_MidlSdkDir)Include\$(FireBoxWindowsSdkVersion)\winrt&quot; /out &quot;$(FireBoxMidlOutDir)&quot; &quot;$(FireBoxIdl)&quot;" />
+            Command="&quot;$(_MidlExe)&quot; /target NT100 /cpp_cmd &quot;$(FireBoxCppCmd)&quot; /I &quot;$(_MidlSdkDir)Include\$(FireBoxWindowsSdkVersion)\um&quot; /I &quot;$(_MidlSdkDir)Include\$(FireBoxWindowsSdkVersion)\shared&quot; /I &quot;$(_MidlSdkDir)Include\$(FireBoxWindowsSdkVersion)\winrt&quot; /out &quot;$(FireBoxMidlOutDir)&quot; &quot;$(FireBoxIdl)&quot;" />
     </Target>
 
     <Target Name="EnforceTypeLibGenerated"

@@ -98,13 +98,26 @@ public sealed class FireBoxConfigurationStore
 
         try
         {
-            return JsonSerializer.Deserialize<FireBoxConfigurationSnapshot>(json, _jsonOptions)
+            var snapshot = JsonSerializer.Deserialize<FireBoxConfigurationSnapshot>(json, _jsonOptions)
                 ?? throw new InvalidOperationException("Configuration snapshot JSON resolved to null.");
+            NormalizeSnapshot(snapshot);
+            return snapshot;
         }
         catch (Exception ex)
         {
             ServiceRuntimeLog.WriteError(null, "ConfigurationStore.Deserialize", ex, $"jsonLength={json.Length}");
             throw;
+        }
+    }
+
+    private static void NormalizeSnapshot(FireBoxConfigurationSnapshot snapshot)
+    {
+        foreach (var route in snapshot.Routes)
+        {
+            if (string.IsNullOrWhiteSpace(route.RouteId) && !string.IsNullOrWhiteSpace(route.LegacyVirtualModelId))
+                route.RouteId = route.LegacyVirtualModelId;
+
+            route.LegacyVirtualModelId = null;
         }
     }
 

@@ -7,7 +7,7 @@ public static class FireBoxGuids
 {
     // Type library (generated from FireBox.idl via MIDL)
     public const string TypeLib = "dc51fb4b-bd5d-4613-8786-e154926b7035";
-    public const string TypeLibVersion = "1.4";
+    public const string TypeLibVersion = "2.0";
 
     // Control — used by App to manage the service
     public const string ControlInterface = "e0df9d43-d19e-4125-9c9e-277020a62cb4";

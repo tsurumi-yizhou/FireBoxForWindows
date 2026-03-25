@@ -9,6 +9,7 @@ public sealed class FireBoxServiceOptions
     public string ComErrorLogFileName { get; set; } = string.Empty;
     public string SingleInstanceMutexName { get; set; } = string.Empty;
     public double AccessDenyCooldownHours { get; set; }
+    public List<string> ControlAllowedExecutablePathSuffixes { get; set; } = [];
 
     public void Validate()
     {
@@ -42,4 +43,21 @@ public sealed class FireBoxServiceOptions
 
     public TimeSpan ResolveAccessDenyCooldown() =>
         TimeSpan.FromHours(AccessDenyCooldownHours);
+
+    public bool IsControlExecutableAllowed(string executablePath)
+    {
+        if (string.IsNullOrWhiteSpace(executablePath))
+            return false;
+
+        foreach (var suffix in ControlAllowedExecutablePathSuffixes)
+        {
+            if (string.IsNullOrWhiteSpace(suffix))
+                continue;
+
+            if (executablePath.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
 }

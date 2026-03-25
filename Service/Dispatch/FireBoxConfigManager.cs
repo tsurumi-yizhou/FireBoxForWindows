@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Reflection;
 using System.Text.Json;
 using Core.Com;
 using Core.Configuration;
@@ -46,20 +47,31 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
         }));
     }
 
+    public int GetVersionCode()
+    {
+        var version = Assembly.GetExecutingAssembly().GetName().Version;
+        if (version is null)
+            return 1;
+
+        var build = version.Build < 0 ? 0 : version.Build;
+        var revision = version.Revision < 0 ? 0 : version.Revision;
+        return (version.Major * 1_000_000) + (version.Minor * 10_000) + (build * 100) + revision;
+    }
+
     public int AddProvider(string providerType, string name, string baseUrl, string apiKey) =>
         Execute("AddProvider", $"providerType={providerType}, name={name}, baseUrl={(string.IsNullOrWhiteSpace(baseUrl) ? "<empty>" : baseUrl)}", () =>
             _configRepo.AddProviderAsync(providerType, name, NormalizeRequiredBaseUrl(baseUrl), apiKey).GetAwaiter().GetResult());
 
-    public void UpdateProvider(int id, string name, string baseUrl, string apiKey, string enabledModelIdsJson)
+    public void UpdateProvider(int id, string name, string baseUrl, string? apiKey, bool apiKeyProvided, string enabledModelIdsJson)
     {
         var enabledModelIds = string.IsNullOrEmpty(enabledModelIdsJson)
             ? null
             : JsonSerializer.Deserialize<List<string>>(enabledModelIdsJson);
-        Execute("UpdateProvider", $"id={id}, name={name}, baseUrl={baseUrl}, apiKeyProvided={!string.IsNullOrWhiteSpace(apiKey)}, enabledModelCount={enabledModelIds?.Count ?? 0}", () =>
+        Execute("UpdateProvider", $"id={id}, name={name}, baseUrl={baseUrl}, apiKeyProvided={apiKeyProvided}, enabledModelCount={enabledModelIds?.Count ?? 0}", () =>
             _configRepo.UpdateProviderAsync(id,
                 string.IsNullOrEmpty(name) ? null : name,
                 string.IsNullOrEmpty(baseUrl) ? null : NormalizeRequiredBaseUrl(baseUrl),
-                string.IsNullOrEmpty(apiKey) ? null : apiKey,
+                apiKeyProvided ? apiKey : null,
                 enabledModelIds).GetAwaiter().GetResult());
     }
 
@@ -83,7 +95,7 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
         var routes = _configRepo.ListRoutesAsync().GetAwaiter().GetResult();
         return JsonSerializer.Serialize(routes.Select(r => new
         {
-            r.Id, r.VirtualModelId, Strategy = FireBoxRouteStrategies.Normalize(r.Strategy),
+            r.Id, r.RouteId, Strategy = FireBoxRouteStrategies.Normalize(r.Strategy),
             Candidates = _configRepo.GetCandidates(r),
             r.Reasoning, r.ToolCalling,
             r.InputFormatsMask, r.OutputFormatsMask,
@@ -91,12 +103,12 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
         }));
     }
 
-    public int AddRoute(string virtualModelId, string strategy, string candidatesJson,
+    public int AddRoute(string routeId, string strategy, string candidatesJson,
         bool reasoning, bool toolCalling, int inputFormatsMask, int outputFormatsMask) =>
-        Execute("AddRoute", $"virtualModelId={virtualModelId}, strategy={strategy}, candidatesJsonLength={candidatesJson?.Length ?? 0}, reasoning={reasoning}, toolCalling={toolCalling}, inputFormatsMask={inputFormatsMask}, outputFormatsMask={outputFormatsMask}", () =>
+        Execute("AddRoute", $"routeId={routeId}, strategy={strategy}, candidatesJsonLength={candidatesJson?.Length ?? 0}, reasoning={reasoning}, toolCalling={toolCalling}, inputFormatsMask={inputFormatsMask}, outputFormatsMask={outputFormatsMask}", () =>
             _configRepo.AddRouteAsync(new RouteRuleEntity
             {
-                VirtualModelId = virtualModelId,
+                RouteId = routeId,
                 Strategy = FireBoxRouteStrategies.Normalize(strategy),
                 CandidatesJson = candidatesJson ?? "[]",
                 Reasoning = reasoning,
@@ -105,13 +117,13 @@ public sealed class FireBoxConfigManager : IFireBoxConfigManager
                 OutputFormatsMask = outputFormatsMask,
             }).GetAwaiter().GetResult());
 
-    public void UpdateRoute(int id, string virtualModelId, string strategy, string candidatesJson,
+    public void UpdateRoute(int id, string routeId, string strategy, string candidatesJson,
         bool reasoning, bool toolCalling, int inputFormatsMask, int outputFormatsMask) =>
-        Execute("UpdateRoute", $"id={id}, virtualModelId={virtualModelId}, strategy={strategy}, candidatesJsonLength={candidatesJson?.Length ?? 0}, reasoning={reasoning}, toolCalling={toolCalling}, inputFormatsMask={inputFormatsMask}, outputFormatsMask={outputFormatsMask}", () =>
+        Execute("UpdateRoute", $"id={id}, routeId={routeId}, strategy={strategy}, candidatesJsonLength={candidatesJson?.Length ?? 0}, reasoning={reasoning}, toolCalling={toolCalling}, inputFormatsMask={inputFormatsMask}, outputFormatsMask={outputFormatsMask}", () =>
             _configRepo.UpdateRouteAsync(new RouteRuleEntity
             {
                 Id = id,
-                VirtualModelId = virtualModelId,
+                RouteId = routeId,
                 Strategy = FireBoxRouteStrategies.Normalize(strategy),
                 CandidatesJson = candidatesJson ?? "[]",
                 Reasoning = reasoning,

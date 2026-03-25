@@ -13,12 +13,7 @@ namespace Core.Com;
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 public partial interface IFireBoxStreamCallback
 {
-    void OnStarted(
-        long requestId,
-        int selectionProviderId,
-        [MarshalAs(UnmanagedType.BStr)] string selectionProviderType,
-        [MarshalAs(UnmanagedType.BStr)] string selectionProviderName,
-        [MarshalAs(UnmanagedType.BStr)] string selectionModelId);
+    void OnStarted(long requestId);
 
     void OnDelta(long requestId, [MarshalAs(UnmanagedType.BStr)] string deltaText);
 
@@ -28,6 +23,7 @@ public partial interface IFireBoxStreamCallback
 
     void OnCompleted(
         long requestId,
+        [MarshalAs(UnmanagedType.BStr)] string modelId,
         [MarshalAs(UnmanagedType.BStr)] string messageRole,
         [MarshalAs(UnmanagedType.BStr)] string messageContent,
         [MarshalAs(UnmanagedType.BStr)] string? reasoningText,
@@ -36,12 +32,7 @@ public partial interface IFireBoxStreamCallback
         long usageCompletionTokens,
         long usageTotalTokens);
 
-    void OnError(
-        long requestId,
-        int errorCode,
-        [MarshalAs(UnmanagedType.BStr)] string errorMessage,
-        [MarshalAs(UnmanagedType.BStr)] string? errorProviderType,
-        [MarshalAs(UnmanagedType.BStr)] string? errorProviderModelId);
+    void OnError(long requestId, [MarshalAs(UnmanagedType.BStr)] string error);
 
     void OnCancelled(long requestId);
 }

@@ -48,7 +48,7 @@ public sealed partial class RoutesPage : Page
 
             AddRouteButton.IsEnabled = GetSelectableProviders().Count > 0;
 
-            foreach (var route in _routes.OrderBy(static route => route.VirtualModelId, StringComparer.OrdinalIgnoreCase))
+            foreach (var route in _routes.OrderBy(static route => route.RouteId, StringComparer.OrdinalIgnoreCase))
             {
                 RouteCardsPanel.Children.Add(CreateRouteCard(route));
             }
@@ -79,7 +79,7 @@ public sealed partial class RoutesPage : Page
         var titlePanel = new StackPanel { Spacing = 4 };
         titlePanel.Children.Add(new TextBlock
         {
-            Text = route.VirtualModelId,
+            Text = route.RouteId,
             FontSize = 18,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
         });
@@ -221,14 +221,14 @@ public sealed partial class RoutesPage : Page
             });
         }
 
-        var virtualModelIdBox = new TextBox
+        var routeIdBox = new TextBox
         {
-            Header = "Virtual Model ID",
-            Text = existing?.VirtualModelId ?? string.Empty,
+            Header = "Route ID",
+            Text = existing?.RouteId ?? string.Empty,
             PlaceholderText = "e.g. gpt-4o",
             HorizontalAlignment = HorizontalAlignment.Stretch,
         };
-        content.Children.Add(virtualModelIdBox);
+        content.Children.Add(routeIdBox);
 
         var strategyBox = new ComboBox
         {
@@ -273,17 +273,17 @@ public sealed partial class RoutesPage : Page
         var inputImageCheck = new CheckBox
         {
             Content = "Image",
-            IsChecked = (((existing?.InputFormatsMask) ?? 0) & ModelMediaFormatMask.ImageBit) != 0,
+            IsChecked = (((existing?.InputFormatsMask) ?? 0) & MediaFormatMask.ImageBit) != 0,
         };
         var inputVideoCheck = new CheckBox
         {
             Content = "Video",
-            IsChecked = (((existing?.InputFormatsMask) ?? 0) & ModelMediaFormatMask.VideoBit) != 0,
+            IsChecked = (((existing?.InputFormatsMask) ?? 0) & MediaFormatMask.VideoBit) != 0,
         };
         var inputAudioCheck = new CheckBox
         {
             Content = "Audio",
-            IsChecked = (((existing?.InputFormatsMask) ?? 0) & ModelMediaFormatMask.AudioBit) != 0,
+            IsChecked = (((existing?.InputFormatsMask) ?? 0) & MediaFormatMask.AudioBit) != 0,
         };
         var inputFormatsPanel = new StackPanel
         {
@@ -297,17 +297,17 @@ public sealed partial class RoutesPage : Page
         var outputImageCheck = new CheckBox
         {
             Content = "Image",
-            IsChecked = (((existing?.OutputFormatsMask) ?? 0) & ModelMediaFormatMask.ImageBit) != 0,
+            IsChecked = (((existing?.OutputFormatsMask) ?? 0) & MediaFormatMask.ImageBit) != 0,
         };
         var outputVideoCheck = new CheckBox
         {
             Content = "Video",
-            IsChecked = (((existing?.OutputFormatsMask) ?? 0) & ModelMediaFormatMask.VideoBit) != 0,
+            IsChecked = (((existing?.OutputFormatsMask) ?? 0) & MediaFormatMask.VideoBit) != 0,
         };
         var outputAudioCheck = new CheckBox
         {
             Content = "Audio",
-            IsChecked = (((existing?.OutputFormatsMask) ?? 0) & ModelMediaFormatMask.AudioBit) != 0,
+            IsChecked = (((existing?.OutputFormatsMask) ?? 0) & MediaFormatMask.AudioBit) != 0,
         };
         var outputFormatsPanel = new StackPanel
         {
@@ -530,12 +530,12 @@ public sealed partial class RoutesPage : Page
         var saved = false;
         dialog.PrimaryButtonClick += (_, args) =>
         {
-            var virtualModelId = virtualModelIdBox.Text.Trim();
+            var routeId = routeIdBox.Text.Trim();
 
-            if (string.IsNullOrWhiteSpace(virtualModelId))
+            if (string.IsNullOrWhiteSpace(routeId))
             {
                 args.Cancel = true;
-                errorText.Text = "Virtual model ID is required.";
+                errorText.Text = "Route ID is required.";
                 errorText.Visibility = Visibility.Visible;
                 return;
             }
@@ -581,7 +581,7 @@ public sealed partial class RoutesPage : Page
                 if (existing is null)
                 {
                     App.Connection.Control.AddRoute(
-                        virtualModelId,
+                        routeId,
                         strategy,
                         candidatesJson,
                         reasoningCheck.IsChecked == true ? 1 : 0,
@@ -593,7 +593,7 @@ public sealed partial class RoutesPage : Page
                 {
                     App.Connection.Control.UpdateRoute(
                         existing.Id,
-                        virtualModelId,
+                        routeId,
                         strategy,
                         candidatesJson,
                         reasoningCheck.IsChecked == true ? 1 : 0,
@@ -617,7 +617,7 @@ public sealed partial class RoutesPage : Page
         if (saved)
         {
             RefreshRoutes();
-            ConfigurationUiHelpers.ShowStatus(StatusBar, InfoBarSeverity.Success, existing is null ? "Route added" : "Route updated", existing is null ? "Route saved successfully." : $"Route '{existing.VirtualModelId}' updated successfully.");
+            ConfigurationUiHelpers.ShowStatus(StatusBar, InfoBarSeverity.Success, existing is null ? "Route added" : "Route updated", existing is null ? "Route saved successfully." : $"Route '{existing.RouteId}' updated successfully.");
         }
     }
 
@@ -632,7 +632,7 @@ public sealed partial class RoutesPage : Page
         var confirmed = await new ContentDialog
         {
             Title = "Delete Route",
-            Content = "This virtual model will stop resolving immediately.",
+            Content = "This route will stop resolving immediately.",
             PrimaryButtonText = "Delete",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
@@ -646,7 +646,7 @@ public sealed partial class RoutesPage : Page
         {
             App.Connection.Control.DeleteRoute(route.Id);
             RefreshRoutes();
-            ConfigurationUiHelpers.ShowStatus(StatusBar, InfoBarSeverity.Success, "Route deleted", $"Deleted route '{route.VirtualModelId}'.");
+            ConfigurationUiHelpers.ShowStatus(StatusBar, InfoBarSeverity.Success, "Route deleted", $"Deleted route '{route.RouteId}'.");
         }
         catch (Exception ex)
         {
@@ -673,18 +673,18 @@ public sealed partial class RoutesPage : Page
     private static int BuildMediaMask(CheckBox imageCheck, CheckBox videoCheck, CheckBox audioCheck)
     {
         var mask = 0;
-        if (imageCheck.IsChecked == true) mask |= ModelMediaFormatMask.ImageBit;
-        if (videoCheck.IsChecked == true) mask |= ModelMediaFormatMask.VideoBit;
-        if (audioCheck.IsChecked == true) mask |= ModelMediaFormatMask.AudioBit;
+        if (imageCheck.IsChecked == true) mask |= MediaFormatMask.ImageBit;
+        if (videoCheck.IsChecked == true) mask |= MediaFormatMask.VideoBit;
+        if (audioCheck.IsChecked == true) mask |= MediaFormatMask.AudioBit;
         return mask;
     }
 
     private static string DescribeMediaFormats(int mask)
     {
         var formats = new List<string>();
-        if ((mask & ModelMediaFormatMask.ImageBit) != 0) formats.Add("Image");
-        if ((mask & ModelMediaFormatMask.VideoBit) != 0) formats.Add("Video");
-        if ((mask & ModelMediaFormatMask.AudioBit) != 0) formats.Add("Audio");
+        if ((mask & MediaFormatMask.ImageBit) != 0) formats.Add("Image");
+        if ((mask & MediaFormatMask.VideoBit) != 0) formats.Add("Video");
+        if ((mask & MediaFormatMask.AudioBit) != 0) formats.Add("Audio");
         return formats.Count == 0 ? "Text only" : string.Join(", ", formats);
     }
 

@@ -1,7 +1,6 @@
 namespace Core.Models;
 
 public sealed record EmbeddingResponse(
-    string VirtualModelId,
+    string ModelId,
     List<Embedding> Embeddings,
-    ProviderSelection Selection,
     Usage Usage);

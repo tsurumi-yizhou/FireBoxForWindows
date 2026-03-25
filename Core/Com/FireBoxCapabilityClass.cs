@@ -14,13 +14,10 @@ namespace Core.Com;
 [Guid(FireBoxGuids.CapabilityClass)]
 public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
 {
-    /// <summary>Set by Service/Program.cs at startup.</summary>
     public static IServiceProvider? ServiceProvider { get; set; }
 
     private static readonly ConcurrentDictionary<long, CancellationTokenSource> s_activeStreams = new();
-    private static readonly ConcurrentDictionary<long, List<Embedding>> s_embeddingCache = new();
     private static long s_nextRequestId;
-    private static long s_nextEmbeddingId;
 
     private long _connectionId;
     private string _processName = string.Empty;
@@ -31,7 +28,9 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (_disposed)
+            return;
+
         _disposed = true;
         UnregisterIfNeeded();
         GC.SuppressFinalize(this);
@@ -48,13 +47,13 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
         {
             try
             {
-                var mgr = GetConfigManager();
-                mgr.UnregisterConnection(_connectionId);
+                GetConfigManager().UnregisterConnection(_connectionId);
             }
             catch (Exception ex)
             {
                 LogComFailure(nameof(UnregisterIfNeeded), ex);
             }
+
             _registered = false;
         }
     }
@@ -67,39 +66,34 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
         ServiceProvider?.GetRequiredService<IFireBoxConfigManager>()
         ?? throw new InvalidOperationException("Service not initialized.");
 
-    /// <summary>
-    /// Gets the real caller PID via CoGetCallContext / RPC_CALL_ATTRIBUTES for out-of-proc COM.
-    /// Returns null if RPC info is unavailable — callers must treat this as an auth failure.
-    /// </summary>
     private static (int Pid, string ProcessName, string ExePath)? IdentifyCaller()
     {
         try
         {
             var pid = GetCallerPid();
-            if (pid > 0)
-            {
-                using var proc = System.Diagnostics.Process.GetProcessById(pid);
-                var name = proc.ProcessName;
-                string exePath;
-                try
-                {
-                    exePath = proc.MainModule?.FileName ?? string.Empty;
-                }
-                catch (Exception ex)
-                {
-                    Trace.TraceWarning($"[FireBoxCapabilityClass] Failed to resolve caller executable path for PID {pid}: {ex.Message}");
-                    exePath = string.Empty;
-                }
+            if (pid <= 0)
+                return null;
 
-                return (pid, name, exePath);
+            using var proc = Process.GetProcessById(pid);
+            var name = proc.ProcessName;
+            string exePath;
+            try
+            {
+                exePath = proc.MainModule?.FileName ?? string.Empty;
             }
+            catch (Exception ex)
+            {
+                Trace.TraceWarning($"[FireBoxCapabilityClass] Failed to resolve caller executable path for PID {pid}: {ex.Message}");
+                exePath = string.Empty;
+            }
+
+            return (pid, name, exePath);
         }
         catch (Exception ex)
         {
             Trace.TraceWarning($"[FireBoxCapabilityClass] Failed to identify COM caller: {ex.Message}");
+            return null;
         }
-
-        return null;
     }
 
     private static int GetCallerPid()
@@ -107,7 +101,7 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
         var hr = Ole32_Rpc.TryGetCallerPidViaLocalRpc(out var pid);
         if (hr >= 0 && pid > 0)
             return pid;
-        
+
         return 0;
     }
 
@@ -124,9 +118,6 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
             _processName = name;
             _executablePath = exePath;
 
-            // Record first so the client appears in the admin UI even if denied.
-            // New records default to IsAllowed = false, so the client is visible
-            // but blocked until an admin explicitly approves it.
             mgr.RecordClientAccess(pid, _processName, _executablePath);
             ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.RegisterClient", $"pid={pid}, process={_processName}, path={_executablePath}");
 
@@ -140,13 +131,10 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
             _registered = true;
             ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.ConnectionRegistered", $"connectionId={_connectionId}, pid={pid}, process={_processName}");
         }
-        else
+        else if (!mgr.IsClientAllowed(_processName, _executablePath))
         {
-            if (!mgr.IsClientAllowed(_processName, _executablePath))
-            {
-                ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.AccessDenied", $"connectionId={_connectionId}, process={_processName}, path={_executablePath}");
-                throw new UnauthorizedAccessException($"Client '{_processName}' ({_executablePath}) is not allowed.");
-            }
+            ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.AccessDenied", $"connectionId={_connectionId}, process={_processName}, path={_executablePath}");
+            throw new UnauthorizedAccessException($"Client '{_processName}' ({_executablePath}) is not allowed.");
         }
 
         mgr.IncrementRequestCount(_connectionId);
@@ -154,7 +142,9 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
 
     private void UpdateConnectionStreamState(bool hasActiveStream)
     {
-        if (!_registered) return;
+        if (!_registered)
+            return;
+
         try
         {
             GetConfigManager().SetConnectionStreamState(_connectionId, hasActiveStream);
@@ -167,115 +157,57 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
 
     public string Ping(string message)
     {
-        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.Ping", $"message={message}");
+        EnsureRegisteredAndAllowed();
+        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.Ping", $"connectionId={_connectionId}, message={message}");
         return $"Pong: {message}";
     }
 
-    public void GetVirtualModelCount(out int count)
+    public string ListModels()
     {
         try
         {
             EnsureRegisteredAndAllowed();
-            var dispatcher = GetDispatcher();
-            count = dispatcher.ListVirtualModelsAsync().GetAwaiter().GetResult().Count;
+            var models = GetDispatcher().ListModelsAsync().GetAwaiter().GetResult();
+            return JsonSerializer.Serialize(new { models });
         }
         catch (Exception ex)
         {
-            LogComFailure(nameof(GetVirtualModelCount), ex);
+            LogComFailure(nameof(ListModels), ex);
             throw;
         }
-    }
-
-    public void GetVirtualModelAt(
-        int index,
-        out string virtualModelId,
-        out string strategy,
-        out int reasoning,
-        out int toolCalling,
-        out int inputFormatsMask,
-        out int outputFormatsMask,
-        out int available)
-    {
-        try
-        {
-            EnsureRegisteredAndAllowed();
-            var dispatcher = GetDispatcher();
-            var models = dispatcher.ListVirtualModelsAsync().GetAwaiter().GetResult();
-            if (index < 0 || index >= models.Count)
-                throw new ArgumentOutOfRangeException(nameof(index), index, "Virtual model index is out of range.");
-
-            var model = models[index];
-            virtualModelId = model.VirtualModelId;
-            strategy = model.Strategy;
-            reasoning = model.Capabilities.Reasoning ? 1 : 0;
-            toolCalling = model.Capabilities.ToolCalling ? 1 : 0;
-            inputFormatsMask = ModelMediaFormatMask.ToMask(model.Capabilities.InputFormats);
-            outputFormatsMask = ModelMediaFormatMask.ToMask(model.Capabilities.OutputFormats);
-            available = model.Available ? 1 : 0;
-        }
-        catch (Exception ex)
-        {
-            LogComFailure(nameof(GetVirtualModelAt), ex);
-            throw;
-        }
-    }
-
-    public void ListVirtualModels(out IntPtr modelsArray, out int count)
-    {
-        EnsureRegisteredAndAllowed();
-        var dispatcher = GetDispatcher();
-        var models = dispatcher.ListVirtualModelsAsync().GetAwaiter().GetResult();
-        var structs = models.Select(Mappers.ToStruct).ToArray();
-        modelsArray = NativeArrayMarshaller.CreateStructArray(structs);
-        count = structs.Length;
-    }
-
-    public void GetModelCandidates(string virtualModelId, out IntPtr candidatesArray, out int count)
-    {
-        EnsureRegisteredAndAllowed();
-        var dispatcher = GetDispatcher();
-        var candidates = dispatcher.GetModelCandidatesAsync(virtualModelId).GetAwaiter().GetResult();
-        var structs = candidates.Select(Mappers.ToStruct).ToArray();
-        candidatesArray = NativeArrayMarshaller.CreateStructArray(structs);
-        count = structs.Length;
     }
 
     public void ChatCompletion(
-        string virtualModelId,
+        string modelId,
         string messagesJson,
-        string? attachmentsJson,
         float temperature,
         int maxOutputTokens,
         int reasoningEffort,
         out ChatCompletionResultStruct result)
     {
         EnsureRegisteredAndAllowed();
-        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.ChatCompletion", $"connectionId={_connectionId}, virtualModelId={virtualModelId}, temperature={temperature}, maxOutputTokens={maxOutputTokens}, reasoningEffort={reasoningEffort}");
-        var dispatcher = GetDispatcher();
-        var messages = DeserializeMessagesWithAttachments(messagesJson, attachmentsJson);
+        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.ChatCompletion", $"connectionId={_connectionId}, modelId={modelId}, temperature={temperature}, maxOutputTokens={maxOutputTokens}, reasoningEffort={reasoningEffort}");
         var request = new ChatCompletionRequest(
-            virtualModelId,
-            messages,
-            null,
+            modelId,
+            DeserializeMessages(messagesJson),
             temperature,
             maxOutputTokens,
-            FireBoxReasoningEfforts.Normalize(reasoningEffort));
+            ReasoningEfforts.Normalize(reasoningEffort));
 
         try
         {
-            var r = dispatcher.ChatCompletionAsync(request, CancellationToken.None).GetAwaiter().GetResult();
-            result = Mappers.ToStruct(r);
+            var response = GetDispatcher().ChatCompletionAsync(request, CancellationToken.None).GetAwaiter().GetResult();
+            result = Mappers.ToStruct(response);
         }
         catch (Exception ex)
         {
-            result = MakeErrorResult(FireBoxErrorCodes.Internal, ex.Message);
+            result = Mappers.ToStruct(new Result<ChatCompletionResponse>(null, ex.Message));
         }
     }
 
     public long StartChatCompletionStream(
-        string virtualModelId,
+        string modelId,
         string messagesJson,
-        string? attachmentsJson,
         float temperature,
         int maxOutputTokens,
         int reasoningEffort,
@@ -283,20 +215,25 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
     {
         EnsureRegisteredAndAllowed();
         var requestId = Interlocked.Increment(ref s_nextRequestId);
-        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.StartChatCompletionStream", $"connectionId={_connectionId}, requestId={requestId}, virtualModelId={virtualModelId}, temperature={temperature}, maxOutputTokens={maxOutputTokens}, reasoningEffort={reasoningEffort}");
+        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.StartChatCompletionStream", $"connectionId={_connectionId}, requestId={requestId}, modelId={modelId}, temperature={temperature}, maxOutputTokens={maxOutputTokens}, reasoningEffort={reasoningEffort}");
+        ChatCompletionRequest request;
+        try
+        {
+            request = new ChatCompletionRequest(
+                modelId,
+                DeserializeMessages(messagesJson),
+                temperature,
+                maxOutputTokens,
+                ReasoningEfforts.Normalize(reasoningEffort));
+        }
+        catch (Exception ex)
+        {
+            TryNotifyCallback(nameof(IFireBoxStreamCallback.OnError), () => callback.OnError(requestId, ex.Message));
+            return requestId;
+        }
+
         var cts = new CancellationTokenSource();
         s_activeStreams[requestId] = cts;
-
-        var dispatcher = GetDispatcher();
-        var messages = DeserializeMessagesWithAttachments(messagesJson, attachmentsJson);
-        var request = new ChatCompletionRequest(
-            virtualModelId,
-            messages,
-            null,
-            temperature,
-            maxOutputTokens,
-            FireBoxReasoningEfforts.Normalize(reasoningEffort));
-
         Interlocked.Increment(ref _activeStreamCount);
         UpdateConnectionStreamState(true);
 
@@ -304,7 +241,7 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
         {
             try
             {
-                await foreach (var evt in dispatcher.ChatCompletionStreamAsync(request, cts.Token))
+                await foreach (var evt in GetDispatcher().ChatCompletionStreamAsync(request, cts.Token))
                 {
                     DispatchStreamEvent(callback, requestId, evt);
                 }
@@ -316,8 +253,7 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
             catch (Exception ex)
             {
                 LogComFailure(nameof(StartChatCompletionStream), ex);
-                TryNotifyCallback(nameof(IFireBoxStreamCallback.OnError), () =>
-                    callback.OnError(requestId, FireBoxErrorCodes.Internal, ex.Message, null, null));
+                TryNotifyCallback(nameof(IFireBoxStreamCallback.OnError), () => callback.OnError(requestId, ex.Message));
             }
             finally
             {
@@ -338,66 +274,25 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
             cts.Cancel();
     }
 
-    public void CreateEmbeddings(
-        string virtualModelId,
-        IntPtr inputArray,
-        out EmbeddingResultStruct result)
+    public void CreateEmbeddings(string modelId, IntPtr inputArray, out EmbeddingResultStruct result)
     {
         EnsureRegisteredAndAllowed();
-        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.CreateEmbeddings", $"connectionId={_connectionId}, virtualModelId={virtualModelId}");
-        var dispatcher = GetDispatcher();
-        var input = ParseBstrArray(inputArray);
-        var request = new EmbeddingRequest(virtualModelId, input);
+        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.CreateEmbeddings", $"connectionId={_connectionId}, modelId={modelId}");
+        var request = new EmbeddingRequest(modelId, ParseBstrArray(inputArray));
 
         try
         {
-            var r = dispatcher.CreateEmbeddingsAsync(request, CancellationToken.None).GetAwaiter().GetResult();
-            result = Mappers.ToStruct(r);
-
-            // Cache embedding vectors with a unique request ID
-            if (r.Response is { Embeddings.Count: > 0 })
-            {
-                var embeddingId = Interlocked.Increment(ref s_nextEmbeddingId);
-                s_embeddingCache[embeddingId] = r.Response.Embeddings;
-                result.EmbeddingRequestId = embeddingId;
-            }
+            var response = GetDispatcher().CreateEmbeddingsAsync(request, CancellationToken.None).GetAwaiter().GetResult();
+            result = Mappers.ToStruct(response);
         }
         catch (Exception ex)
         {
-            result = default;
-            result.HasResponse = 0;
-            result.ErrorCode = FireBoxErrorCodes.Internal;
-            result.ErrorMessage = Marshal.StringToBSTR(ex.Message);
+            result = Mappers.ToStruct(new Result<EmbeddingResponse>(null, ex.Message));
         }
-    }
-
-    public void GetEmbeddingVectors(
-        long embeddingRequestId,
-        out IntPtr indicesArray,
-        out IntPtr flatVectorsArray,
-        out int vectorDimension)
-    {
-        if (!s_embeddingCache.TryRemove(embeddingRequestId, out var embeddings) || embeddings.Count == 0)
-        {
-            indicesArray = IntPtr.Zero;
-            flatVectorsArray = IntPtr.Zero;
-            vectorDimension = 0;
-            return;
-        }
-
-        vectorDimension = embeddings[0].Vector.Length;
-
-        var indices = embeddings.Select(e => e.Index).ToArray();
-        indicesArray = NativeArrayMarshaller.CreateIntArray(indices);
-
-        var flatVectors = new float[embeddings.Count * vectorDimension];
-        for (var i = 0; i < embeddings.Count; i++)
-            embeddings[i].Vector.CopyTo(flatVectors, i * vectorDimension);
-        flatVectorsArray = NativeArrayMarshaller.CreateFloatArray(flatVectors);
     }
 
     public void CallFunction(
-        string virtualModelId,
+        string modelId,
         string functionName,
         string functionDescription,
         string inputJson,
@@ -408,56 +303,61 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
         out FunctionCallResultStruct result)
     {
         EnsureRegisteredAndAllowed();
-        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.CallFunction", $"connectionId={_connectionId}, virtualModelId={virtualModelId}, functionName={functionName}, maxOutputTokens={maxOutputTokens}");
-        var dispatcher = GetDispatcher();
+        ServiceRuntimeLog.WriteInfo(ServiceProvider, "Capability.CallFunction", $"connectionId={_connectionId}, modelId={modelId}, functionName={functionName}, maxOutputTokens={maxOutputTokens}");
         var request = new FunctionCallRequest(
-            virtualModelId, functionName, functionDescription,
-            inputJson, inputSchemaJson, outputSchemaJson,
-            temperature, maxOutputTokens);
+            modelId,
+            functionName,
+            functionDescription,
+            inputJson,
+            inputSchemaJson,
+            outputSchemaJson,
+            temperature,
+            maxOutputTokens);
 
         try
         {
-            var r = dispatcher.CallFunctionAsync(request, CancellationToken.None).GetAwaiter().GetResult();
-            result = Mappers.ToStruct(r);
+            var response = GetDispatcher().CallFunctionAsync(request, CancellationToken.None).GetAwaiter().GetResult();
+            result = Mappers.ToStruct(response);
         }
         catch (Exception ex)
         {
-            result = default;
-            result.HasResponse = 0;
-            result.ErrorCode = FireBoxErrorCodes.Internal;
-            result.ErrorMessage = Marshal.StringToBSTR(ex.Message);
+            result = Mappers.ToStruct(new Result<FunctionCallResponse>(null, ex.Message));
         }
     }
 
-    // --- Helpers ---
-
-    private static void DispatchStreamEvent(IFireBoxStreamCallback cb, long requestId, ChatStreamEvent evt)
+    private static void DispatchStreamEvent(IFireBoxStreamCallback callback, long requestId, ChatStreamEvent evt)
     {
         switch (evt.Type)
         {
-            case ChatStreamEventType.Started when evt.Selection is not null:
-                cb.OnStarted(requestId, evt.Selection.ProviderId,
-                    evt.Selection.ProviderType, evt.Selection.ProviderName, evt.Selection.ModelId);
+            case ChatStreamEventType.Started:
+                callback.OnStarted(requestId);
                 break;
             case ChatStreamEventType.Delta:
-                cb.OnDelta(requestId, evt.DeltaText ?? string.Empty);
+                callback.OnDelta(requestId, evt.DeltaText ?? string.Empty);
                 break;
             case ChatStreamEventType.ReasoningDelta:
-                cb.OnReasoningDelta(requestId, evt.ReasoningText ?? string.Empty);
+                callback.OnReasoningDelta(requestId, evt.ReasoningText ?? string.Empty);
                 break;
             case ChatStreamEventType.Usage when evt.Usage is not null:
-                cb.OnUsage(requestId, evt.Usage.PromptTokens, evt.Usage.CompletionTokens, evt.Usage.TotalTokens);
+                callback.OnUsage(requestId, evt.Usage.PromptTokens, evt.Usage.CompletionTokens, evt.Usage.TotalTokens);
                 break;
             case ChatStreamEventType.Completed when evt.Response is not null:
-                cb.OnCompleted(requestId, evt.Response.Message.Role, evt.Response.Message.Content,
-                    evt.Response.ReasoningText, evt.Response.FinishReason,
-                    evt.Response.Usage.PromptTokens, evt.Response.Usage.CompletionTokens, evt.Response.Usage.TotalTokens);
+                callback.OnCompleted(
+                    requestId,
+                    evt.Response.ModelId,
+                    evt.Response.Message.Role,
+                    evt.Response.Message.Content,
+                    evt.Response.ReasoningText,
+                    evt.Response.FinishReason,
+                    evt.Response.Usage.PromptTokens,
+                    evt.Response.Usage.CompletionTokens,
+                    evt.Response.Usage.TotalTokens);
                 break;
-            case ChatStreamEventType.Error when evt.Error is not null:
-                cb.OnError(requestId, evt.Error.Code, evt.Error.Message, evt.Error.ProviderType, evt.Error.ProviderModelId);
+            case ChatStreamEventType.Error:
+                callback.OnError(requestId, evt.Error ?? "Unknown error");
                 break;
             case ChatStreamEventType.Cancelled:
-                cb.OnCancelled(requestId);
+                callback.OnCancelled(requestId);
                 break;
         }
     }
@@ -468,63 +368,20 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
         PropertyNameCaseInsensitive = true,
     };
 
-    private static List<ChatMessage> DeserializeMessagesWithAttachments(string messagesJson, string? attachmentsJson)
+    private static List<ChatMessage> DeserializeMessages(string messagesJson)
     {
         if (string.IsNullOrWhiteSpace(messagesJson))
             return [];
 
-        var messages = JsonSerializer.Deserialize<List<ChatMessage>>(messagesJson, s_jsonOptions) ?? [];
-
-        if (string.IsNullOrWhiteSpace(attachmentsJson))
-            return messages;
-
-        var attachments = JsonSerializer.Deserialize<List<ChatAttachmentDto>>(attachmentsJson, s_jsonOptions);
-        if (attachments is null || attachments.Count == 0)
-            return messages;
-
-        var grouped = attachments.GroupBy(a => a.MessageIndex);
-        foreach (var group in grouped)
-        {
-            var idx = group.Key;
-            if (idx < 0 || idx >= messages.Count) continue;
-            var atts = group.Select(a => {
-                var data = Convert.FromBase64String(a.Base64Data ?? string.Empty);
-                return new ChatAttachment(
-                    (ModelMediaFormat)a.MediaFormat,
-                    a.MimeType ?? string.Empty,
-                    a.FileName ?? string.Empty,
-                    data,
-                    a.SizeBytes > 0 ? a.SizeBytes : data.Length);
-            }).ToList();
-            messages[idx] = messages[idx] with { Attachments = atts };
-        }
-
-        return messages;
-    }
-
-    private sealed class ChatAttachmentDto
-    {
-        public int MessageIndex { get; set; }
-        public int MediaFormat { get; set; }
-        public string? MimeType { get; set; }
-        public string? FileName { get; set; }
-        public long SizeBytes { get; set; }
-        public string? Base64Data { get; set; }
+        return JsonSerializer.Deserialize<List<ChatMessage>>(messagesJson, s_jsonOptions) ?? [];
     }
 
     private static List<string> ParseBstrArray(IntPtr nativeArray)
     {
-        if (nativeArray == IntPtr.Zero) return [];
-        return NativeArrayMarshaller.ReadBstrArray(nativeArray).ToList();
-    }
+        if (nativeArray == IntPtr.Zero)
+            return [];
 
-    private static ChatCompletionResultStruct MakeErrorResult(int code, string message)
-    {
-        var result = default(ChatCompletionResultStruct);
-        result.HasResponse = 0;
-        result.ErrorCode = code;
-        result.ErrorMessage = Marshal.StringToBSTR(message);
-        return result;
+        return NativeArrayMarshaller.ReadBstrArray(nativeArray).ToList();
     }
 
     private void TryNotifyCallback(string callbackName, Action notification)
@@ -547,25 +404,8 @@ public partial class FireBoxCapabilityClass : IFireBoxCapability, IDisposable
             ex,
             $"connectionId={_connectionId}, process={_processName}, path={_executablePath}");
     }
-
 }
 
-internal static class FireBoxErrorCodes
-{
-    public const int Security = 1;
-    public const int InvalidArgument = 2;
-    public const int NoRoute = 3;
-    public const int NoCandidate = 4;
-    public const int ProviderError = 5;
-    public const int Timeout = 6;
-    public const int Internal = 7;
-    public const int Cancelled = 8;
-}
-
-/// <summary>
-/// P/Invoke for getting the real caller PID in out-of-proc COM scenarios.
-/// Uses RpcServerInqCallAttributesW with RPC_CALL_ATTRIBUTES_V2 to get ClientPID.
-/// </summary>
 internal static class Ole32_Rpc
 {
     public static int TryGetCallerPidViaLocalRpc(out int pid)

@@ -1,5 +1,5 @@
 namespace Core.Models;
 
 public sealed record EmbeddingRequest(
-    string VirtualModelId,
+    string ModelId,
     List<string> Input);

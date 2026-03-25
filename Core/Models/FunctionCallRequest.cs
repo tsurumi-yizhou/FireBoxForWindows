@@ -1,7 +1,7 @@
 namespace Core.Models;
 
 public sealed record FunctionCallRequest(
-    string VirtualModelId,
+    string ModelId,
     string FunctionName,
     string FunctionDescription,
     string InputJson,
