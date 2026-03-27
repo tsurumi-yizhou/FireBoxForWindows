@@ -1,6 +1,7 @@
 using System;
 using System.Text;
 using System.Threading.Tasks;
+using Demo.Search;
 using Demo.Services;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -62,7 +63,7 @@ public partial class App : Application
         catch (Exception ex)
         {
             EnsureWindow().Content = BuildErrorContent(
-                "FireBox Demo failed to start",
+                "FireChatBox failed to start",
                 FormatExceptionForDisplay(ex));
         }
     }
@@ -91,15 +92,16 @@ public partial class App : Application
     {
         try
         {
-            return new MainWindow();
+            var searchService = new ConversationSearchService();
+            return new MainWindow(searchService);
         }
         catch (Exception ex)
         {
             return new Window
             {
-                Title = "FireBox Demo",
+                Title = "FireChatBox",
                 Content = BuildErrorContent(
-                    "FireBox Demo UI failed to initialize",
+                    "FireChatBox UI failed to initialize",
                     FormatExceptionForDisplay(ex)),
             };
         }
@@ -110,7 +112,7 @@ public partial class App : Application
         if (_window is not null)
             return _window;
 
-        _window = new Window { Title = "FireBox Demo" };
+        _window = new Window { Title = "FireChatBox" };
         MainWindowInstance = _window;
         _window.Activate();
         return _window;
@@ -164,7 +166,7 @@ public partial class App : Application
 
         panel.Children.Add(new TextBlock
         {
-            Text = "FireBox Demo hit an exception. Details are shown below so the failure is visible in the GUI.",
+            Text = "FireChatBox hit an exception. Details are shown below so the failure is visible in the GUI.",
             TextWrapping = TextWrapping.Wrap,
         });
 

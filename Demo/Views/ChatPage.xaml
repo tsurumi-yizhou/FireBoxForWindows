@@ -8,9 +8,32 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:models="using:Demo.Models"
     mc:Ignorable="d"
-    Loaded="OnLoaded">
+    Loaded="OnLoaded"
+    Unloaded="OnUnloaded">
 
-    <Grid Padding="16" RowSpacing="12">
+    <UserControl.Resources>
+        <MenuFlyout x:Name="MessageBubbleMenuFlyout"
+                    Closed="MessageBubbleMenuFlyout_Closed">
+            <MenuFlyoutItem x:Name="MessageBubbleSelectAllMenuItem"
+                            Click="MessageBubbleSelectAllMenuItem_Click" />
+            <MenuFlyoutItem x:Name="MessageBubbleCopyMenuItem"
+                            Click="MessageBubbleCopyMenuItem_Click" />
+            <MenuFlyoutItem x:Name="MessageBubbleRetryMenuItem"
+                            Click="MessageBubbleRetryMenuItem_Click">
+                <MenuFlyoutItem.Icon>
+                    <SymbolIcon Symbol="Refresh" />
+                </MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+            <MenuFlyoutItem x:Name="MessageBubbleDeleteMenuItem"
+                            Click="MessageBubbleDeleteMenuItem_Click">
+                <MenuFlyoutItem.Icon>
+                    <SymbolIcon Symbol="Delete" />
+                </MenuFlyoutItem.Icon>
+            </MenuFlyoutItem>
+        </MenuFlyout>
+    </UserControl.Resources>
+
+    <Grid Padding="20" RowSpacing="14">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -18,32 +41,36 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Top bar: model selector + clear -->
-        <Grid Grid.Row="0" ColumnSpacing="8">
+        <Grid Grid.Row="0" ColumnSpacing="12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
-            <ComboBox x:Name="ModelSelector"
-                      Grid.Column="0"
-                      HorizontalAlignment="Stretch"
-                      PlaceholderText="Select a model"
-                      DropDownOpened="ModelSelector_DropDownOpened"
-                      SelectionChanged="ModelSelector_SelectionChanged" />
+            <TextBlock Grid.Column="0"
+                       VerticalAlignment="Center"
+                       Text="{x:Bind ViewModel.ActiveConversationTitle, Mode=OneWay}"
+                       Style="{StaticResource SubtitleTextBlockStyle}"
+                       TextTrimming="CharacterEllipsis" />
 
-            <Button Grid.Column="1"
-                    Content="&#xE72C;"
-                    FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                    ToolTipService.ToolTip="Refresh models"
-                    Click="RefreshModels_Click" />
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        HorizontalAlignment="Right">
+                <ComboBox x:Name="ModelSelector"
+                          Width="220"
+                          HorizontalAlignment="Right"
+                          PlaceholderText="Select a model"
+                          SelectionChanged="ModelSelector_SelectionChanged" />
 
-            <Button Grid.Column="2"
-                    Content="&#xE74D;"
-                    FontFamily="{ThemeResource SymbolThemeFontFamily}"
-                    ToolTipService.ToolTip="Clear chat"
-                    Click="ClearButton_Click" />
+                <ComboBox x:Name="ReasoningEffortSelector"
+                          Width="172"
+                          HorizontalAlignment="Right"
+                          PlaceholderText="Thinking intensity"
+                          DisplayMemberPath="Label"
+                          ItemsSource="{x:Bind ViewModel.ReasoningEffortOptions, Mode=OneWay}"
+                          SelectedItem="{x:Bind ViewModel.SelectedReasoningEffort, Mode=TwoWay}" />
+            </StackPanel>
         </Grid>
 
         <InfoBar x:Name="FeedbackBar"
@@ -56,103 +83,160 @@
         <!-- Messages list -->
         <ListView x:Name="MessageList"
                   Grid.Row="2"
+                  Padding="0,0,12,0"
                   SelectionMode="None"
                   ItemsSource="{x:Bind ViewModel.Messages, Mode=OneWay}">
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="models:ChatUiMessage">
-                    <Grid Padding="8,6" Margin="0,2"
-                          CornerRadius="8"
-                          Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
+                    <StackPanel HorizontalAlignment="{x:Bind BubbleHorizontalAlignment, Mode=OneWay}"
+                                Margin="{x:Bind BubbleOuterMargin, Mode=OneWay}"
+                                Spacing="4"
+                                MaxWidth="760"
+                                ContextRequested="MessageBubble_ContextRequested">
+                        <Border Padding="14,10"
+                                CornerRadius="{x:Bind BubbleCornerRadius, Mode=OneWay}"
+                                Background="{x:Bind BubbleBackground, Mode=OneWay}">
+                            <StackPanel Spacing="6">
+                                <Grid>
+                                    <TextBlock Text="{x:Bind Content, Mode=OneWay}"
+                                               TextWrapping="WrapWholeWords"
+                                               IsTextSelectionEnabled="True"
+                                               ContextFlyout="{x:Null}"
+                                               Visibility="{x:Bind PlainTextVisibility, Mode=OneWay}"
+                                               Foreground="{x:Bind MessageForeground, Mode=OneWay}" />
 
-                        <TextBlock Grid.Row="0"
-                                   Text="{x:Bind Role}"
-                                   FontWeight="SemiBold"
-                                   FontSize="12"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <controls:MarkdownTextBlock Text="{x:Bind Content, Mode=OneWay}"
+                                                                TextWrapping="WrapWholeWords"
+                                                                IsTextSelectionEnabled="True"
+                                                                ContextFlyout="{x:Null}"
+                                                                Visibility="{x:Bind MarkdownVisibility, Mode=OneWay}"
+                                                                FontFamily="{ThemeResource ContentControlThemeFontFamily}"
+                                                                Foreground="{x:Bind MessageForeground, Mode=OneWay}"
+                                                                Background="Transparent"
+                                                                BorderThickness="0"
+                                                                Padding="0"
+                                                                LinkClicked="MarkdownMessage_LinkClicked" />
+                                </Grid>
 
-                        <TextBlock Grid.Row="1"
-                                   Text="{x:Bind Content, Mode=OneWay}"
-                                   TextWrapping="Wrap"
-                                   IsTextSelectionEnabled="True"
-                                   Visibility="{x:Bind PlainTextVisibility, Mode=OneWay}"
-                                   Margin="0,4,0,0" />
+                                <ItemsControl ItemsSource="{x:Bind AttachmentItems, Mode=OneWay}"
+                                              Visibility="{x:Bind AttachmentVisibility, Mode=OneWay}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Spacing="4" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="models:ChatUiAttachmentItem">
+                                            <Border Padding="6"
+                                                    CornerRadius="4"
+                                                    Background="{ThemeResource LayerFillColorDefaultBrush}">
+                                                <StackPanel Spacing="4">
+                                                    <Image Source="{x:Bind PreviewImage, Mode=OneWay}"
+                                                           Visibility="{x:Bind PreviewVisibility, Mode=OneWay}"
+                                                           Stretch="UniformToFill"
+                                                           MaxWidth="280"
+                                                           MaxHeight="180" />
 
-                        <controls:MarkdownTextBlock Grid.Row="1"
-                                                    Text="{x:Bind Content, Mode=OneWay}"
-                                                    TextWrapping="Wrap"
-                                                    IsTextSelectionEnabled="True"
-                                                    Visibility="{x:Bind MarkdownVisibility, Mode=OneWay}"
-                                                    LinkClicked="MarkdownMessage_LinkClicked"
-                                                    Margin="0,4,0,0" />
-                    </Grid>
+                                                    <TextBlock Text="{x:Bind DisplayName, Mode=OneWay}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
                 </DataTemplate>
             </ListView.ItemTemplate>
             <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                     <Setter Property="Padding" Value="0" />
-                    <Setter Property="Margin" Value="0,2" />
+                    <Setter Property="Margin" Value="0,3" />
                 </Style>
             </ListView.ItemContainerStyle>
         </ListView>
 
-        <StackPanel Grid.Row="3" Spacing="8">
-            <Border x:Name="AttachmentPanel"
-                    Padding="10"
+        <StackPanel Grid.Row="3" Spacing="6">
+            <Border Padding="8"
                     CornerRadius="8"
-                    Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
-                    Visibility="Collapsed">
-                <StackPanel Spacing="8">
-                    <Grid ColumnSpacing="8">
+                    BorderThickness="1"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <Grid RowSpacing="6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Border x:Name="AttachmentRail"
+                            Grid.Row="0"
+                            Padding="6"
+                            CornerRadius="6"
+                            BorderThickness="1"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            Background="{ThemeResource LayerFillColorDefaultBrush}"
+                            Visibility="Collapsed">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollMode="Enabled"
+                                      HorizontalScrollMode="Disabled"
+                                      MaxHeight="108">
+                            <StackPanel x:Name="AttachmentListPanel"
+                                        Spacing="4" />
+                        </ScrollViewer>
+                    </Border>
+
+                    <Grid Grid.Row="1" ColumnSpacing="6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
                         <Button x:Name="PickFileButton"
                                 Grid.Column="0"
-                                Content="Add File"
-                                Click="PickFileButton_Click" />
+                                Width="40"
+                                Height="40"
+                                Padding="0"
+                                ToolTipService.ToolTip="Upload file"
+                                Click="PickFileButton_Click">
+                            <SymbolIcon Symbol="Upload" />
+                        </Button>
 
-                        <TextBlock x:Name="AttachmentHintText"
-                                   Grid.Column="1"
-                                   VerticalAlignment="Center"
-                                   TextWrapping="Wrap"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <Border Grid.Column="1"
+                                Height="40"
+                                CornerRadius="6"
+                                BorderThickness="1"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                Background="{ThemeResource LayerFillColorDefaultBrush}">
+                            <TextBox x:Name="InputBox"
+                                     PlaceholderText="Type your message..."
+                                     AcceptsReturn="False"
+                                     KeyDown="InputBox_KeyDown"
+                                     MinHeight="40"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     Padding="10,6"
+                                     Text="{x:Bind ViewModel.InputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </Border>
+
+                        <Button x:Name="SendButton"
+                                Grid.Column="2"
+                                Width="40"
+                                Height="40"
+                                Padding="0"
+                                Click="SendButton_Click"
+                                IsEnabled="{x:Bind ViewModel.CanSubmitOrAbort, Mode=OneWay}"
+                                Style="{ThemeResource AccentButtonStyle}">
+                            <Viewbox Width="18" Height="18">
+                                <SymbolIcon Symbol="{x:Bind ViewModel.SendButtonSymbol, Mode=OneWay}" />
+                            </Viewbox>
+                        </Button>
                     </Grid>
-
-                    <StackPanel x:Name="AttachmentListPanel" Spacing="6" />
-                </StackPanel>
+                </Grid>
             </Border>
-
-            <!-- Input bar -->
-            <Grid ColumnSpacing="8"
-                  Padding="12"
-                  CornerRadius="8"
-                  Background="{ThemeResource LayerOnAcrylicFillColorDefaultBrush}">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-
-                <TextBox x:Name="InputBox"
-                         Grid.Column="0"
-                         PlaceholderText="Type a message..."
-                         AcceptsReturn="False"
-                         KeyDown="InputBox_KeyDown"
-                         Text="{x:Bind ViewModel.InputText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-
-                <Button x:Name="SendButton"
-                        Grid.Column="1"
-                        Click="SendButton_Click"
-                        Style="{ThemeResource AccentButtonStyle}">
-                    <FontIcon Glyph="&#xE724;" FontFamily="{ThemeResource SymbolThemeFontFamily}" />
-                </Button>
-            </Grid>
         </StackPanel>
     </Grid>
 </UserControl>

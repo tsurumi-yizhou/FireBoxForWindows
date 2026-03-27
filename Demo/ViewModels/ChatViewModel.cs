@@ -26,6 +26,7 @@ public partial class ChatViewModel : ObservableObject
     private CancellationTokenSource? _streamCts;
     private readonly Dictionary<string, ModelInfo> _modelsById = new(StringComparer.OrdinalIgnoreCase);
     private Conversation? _activeConversation;
+    private string _autoTitleFunctionDescription = string.Empty;
 
     public ObservableCollection<Conversation> Conversations { get; } = [];
 
@@ -55,13 +56,24 @@ public partial class ChatViewModel : ObservableObject
     [ObservableProperty]
     private bool _hasPendingAttachments;
 
+    [ObservableProperty]
+    private ReasoningEffortOption? _selectedReasoningEffort;
+
     public bool IsConnected => _client is not null;
+
+    public ObservableCollection<ReasoningEffortOption> ReasoningEffortOptions { get; } =
+        new(ReasoningEfforts.SupportedValues.Select(static effort =>
+            new ReasoningEffortOption(effort, ReasoningEfforts.ToDisplayName(effort))));
 
     public bool CanSend =>
         (!string.IsNullOrWhiteSpace(InputText) || HasPendingAttachments)
         && !string.IsNullOrWhiteSpace(SelectedModelId)
         && !IsStreaming
         && IsConnected;
+
+    public bool CanSubmitOrAbort => IsStreaming || CanSend;
+    public Symbol SendButtonSymbol => IsStreaming ? Symbol.Stop : Symbol.Send;
+    public string ActiveConversationTitle => _activeConversation?.Title ?? string.Empty;
 
     public bool SupportsImageInput => SupportsInputFormat(MediaFormat.Image);
     public bool SupportsVideoInput => SupportsInputFormat(MediaFormat.Video);
@@ -94,6 +106,7 @@ public partial class ChatViewModel : ObservableObject
         _client = client;
         _conversationStore = conversationStore;
         _dispatcherQueue = dispatcherQueue;
+        SelectedReasoningEffort = ReasoningEffortOptions.FirstOrDefault();
         LoadPersistedConversations();
     }
 
@@ -102,13 +115,27 @@ public partial class ChatViewModel : ObservableObject
         _client = client;
         OnPropertyChanged(nameof(IsConnected));
         OnPropertyChanged(nameof(CanSend));
+        OnPropertyChanged(nameof(CanSubmitOrAbort));
     }
 
-    partial void OnInputTextChanged(string value) => OnPropertyChanged(nameof(CanSend));
+    public void SetAutoTitleFunctionDescription(string functionDescription)
+    {
+        if (string.IsNullOrWhiteSpace(functionDescription))
+            throw new ArgumentException("Function description is required.", nameof(functionDescription));
+
+        _autoTitleFunctionDescription = functionDescription;
+    }
+
+    partial void OnInputTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(CanSend));
+        OnPropertyChanged(nameof(CanSubmitOrAbort));
+    }
 
     partial void OnSelectedModelIdChanged(string value)
     {
         OnPropertyChanged(nameof(CanSend));
+        OnPropertyChanged(nameof(CanSubmitOrAbort));
         OnPropertyChanged(nameof(SupportsImageInput));
         OnPropertyChanged(nameof(SupportsVideoInput));
         OnPropertyChanged(nameof(SupportsAudioInput));
@@ -116,8 +143,27 @@ public partial class ChatViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedModelInputFormatsLabel));
     }
 
-    partial void OnIsStreamingChanged(bool value) => OnPropertyChanged(nameof(CanSend));
-    partial void OnHasPendingAttachmentsChanged(bool value) => OnPropertyChanged(nameof(CanSend));
+    partial void OnIsStreamingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanSend));
+        OnPropertyChanged(nameof(CanSubmitOrAbort));
+        OnPropertyChanged(nameof(SendButtonSymbol));
+    }
+
+    partial void OnHasPendingAttachmentsChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanSend));
+        OnPropertyChanged(nameof(CanSubmitOrAbort));
+    }
+
+    public bool TryCancelStreaming()
+    {
+        if (!IsStreaming || _streamCts is null)
+            return false;
+
+        _streamCts.Cancel();
+        return true;
+    }
 
     public void LoadModels()
     {
@@ -215,6 +261,8 @@ public partial class ChatViewModel : ObservableObject
             foreach (var msg in _activeConversation.Messages)
                 Messages.Add(msg);
         }
+
+        OnPropertyChanged(nameof(ActiveConversationTitle));
         Error = null;
     }
 
@@ -228,7 +276,65 @@ public partial class ChatViewModel : ObservableObject
         {
             _activeConversation = null;
             Messages.Clear();
+            OnPropertyChanged(nameof(ActiveConversationTitle));
         }
+    }
+
+    public bool DeleteMessage(long messageId)
+    {
+        if (IsStreaming)
+            return false;
+
+        var messageIndex = FindMessageIndexById(messageId);
+        if (messageIndex < 0)
+            return false;
+
+        Messages.RemoveAt(messageIndex);
+        PersistActiveConversation();
+        return true;
+    }
+
+    public async Task<bool> RetryMessageAsync(long messageId)
+    {
+        if (IsStreaming || _client is null || string.IsNullOrWhiteSpace(SelectedModelId))
+            return false;
+
+        var targetIndex = FindMessageIndexById(messageId);
+        if (targetIndex < 0)
+            return false;
+
+        var retryUserIndex = ResolveRetryUserMessageIndex(targetIndex);
+        if (retryUserIndex < 0)
+            return false;
+
+        var assistantIndex = Messages[targetIndex].IsUserMessage
+            ? FindNextAssistantMessageIndex(retryUserIndex)
+            : targetIndex;
+
+        ChatUiMessage assistantMessage;
+        if (assistantIndex >= 0)
+        {
+            assistantMessage = Messages[assistantIndex];
+            ResetAssistantMessageForRetry(assistantMessage);
+        }
+        else
+        {
+            assistantMessage = CreateStreamingAssistantMessage();
+            var insertIndex = Math.Min(retryUserIndex + 1, Messages.Count);
+            Messages.Insert(insertIndex, assistantMessage);
+        }
+
+        var requestMessages = Messages
+            .Take(retryUserIndex + 1)
+            .Where(IsRequestContextMessage)
+            .Select(message => new ChatMessage(message.Role, message.Content, message.Attachments))
+            .ToList();
+        if (requestMessages.Count == 0)
+            return false;
+
+        PersistActiveConversation();
+        await RunAssistantStreamingAsync(assistantMessage, requestMessages);
+        return true;
     }
 
     [RelayCommand]
@@ -261,8 +367,9 @@ public partial class ChatViewModel : ObservableObject
 
         if (_activeConversation is not null && _activeConversation.Title == "New Chat")
         {
-            _activeConversation.Title = userText.Length > 30 ? userText[..30] + "..." : userText;
+            _activeConversation.Title = await GenerateConversationTitleAsync(userText);
             PersistActiveConversation();
+            OnPropertyChanged(nameof(ActiveConversationTitle));
         }
 
         var assistantMsg = new ChatUiMessage
@@ -273,15 +380,26 @@ public partial class ChatViewModel : ObservableObject
         };
         Messages.Add(assistantMsg);
 
+        var requestMessages = Messages
+            .Where(IsRequestContextMessage)
+            .Select(message => new ChatMessage(message.Role, message.Content, message.Attachments))
+            .ToList();
+        await RunAssistantStreamingAsync(assistantMsg, requestMessages);
+    }
+
+    private async Task RunAssistantStreamingAsync(ChatUiMessage assistantMessage, List<ChatMessage> requestMessages)
+    {
+        if (_client is null || string.IsNullOrWhiteSpace(SelectedModelId))
+            return;
+
         IsStreaming = true;
         _streamCts = new CancellationTokenSource();
         var request = new ChatCompletionRequest(
             SelectedModelId,
-            Messages
-                .Where(static m => (m.Role is "user" or "assistant" or "system")
-                    && (!string.IsNullOrEmpty(m.Content) || m.Attachments is { Count: > 0 }))
-                .Select(m => new ChatMessage(m.Role, m.Content, m.Attachments))
-                .ToList());
+            requestMessages,
+            -1f,
+            -1,
+            SelectedReasoningEffort?.Value ?? ReasoningEffort.Default);
 
         try
         {
@@ -292,31 +410,31 @@ public partial class ChatViewModel : ObservableObject
                     switch (evt.Type)
                     {
                         case ChatStreamEventType.Delta:
-                            assistantMsg.Content += evt.DeltaText;
+                            assistantMessage.Content += evt.DeltaText;
                             break;
                         case ChatStreamEventType.ReasoningDelta:
-                            assistantMsg.ReasoningContent = (assistantMsg.ReasoningContent ?? "") + evt.ReasoningText;
+                            assistantMessage.ReasoningContent = (assistantMessage.ReasoningContent ?? "") + evt.ReasoningText;
                             break;
                         case ChatStreamEventType.Completed:
-                            assistantMsg.IsStreaming = false;
+                            assistantMessage.IsStreaming = false;
                             if (evt.Response is not null)
-                                assistantMsg.Content = evt.Response.Message.Content;
+                                assistantMessage.Content = evt.Response.Message.Content;
                             SetFeedback(InfoBarSeverity.Success, "Response completed.");
                             PersistActiveConversation();
                             break;
                         case ChatStreamEventType.Error:
                             var streamError = evt.Error ?? "Unknown error";
-                            assistantMsg.ErrorMessage = streamError;
-                            assistantMsg.Content = $"[Request failed] {streamError}";
+                            assistantMessage.ErrorMessage = streamError;
+                            assistantMessage.Content = $"[Request failed] {streamError}";
                             Error = streamError;
                             SetFeedback(InfoBarSeverity.Error, streamError);
-                            assistantMsg.IsStreaming = false;
+                            assistantMessage.IsStreaming = false;
                             PersistActiveConversation();
                             break;
                         case ChatStreamEventType.Cancelled:
                             Error = "Request cancelled.";
                             SetFeedback(InfoBarSeverity.Warning, "Request cancelled.");
-                            assistantMsg.IsStreaming = false;
+                            assistantMessage.IsStreaming = false;
                             PersistActiveConversation();
                             break;
                     }
@@ -329,7 +447,7 @@ public partial class ChatViewModel : ObservableObject
             {
                 Error = "Request cancelled.";
                 SetFeedback(InfoBarSeverity.Warning, "Request cancelled.");
-                assistantMsg.IsStreaming = false;
+                assistantMessage.IsStreaming = false;
                 PersistActiveConversation();
             });
         }
@@ -338,11 +456,11 @@ public partial class ChatViewModel : ObservableObject
             _dispatcherQueue.TryEnqueue(() =>
             {
                 var requestError = BuildFriendlyError(ex, "Request");
-                assistantMsg.ErrorMessage = requestError;
-                assistantMsg.Content = $"[Request failed] {requestError}";
+                assistantMessage.ErrorMessage = requestError;
+                assistantMessage.Content = $"[Request failed] {requestError}";
                 Error = requestError;
                 SetFeedback(InfoBarSeverity.Error, requestError);
-                assistantMsg.IsStreaming = false;
+                assistantMessage.IsStreaming = false;
                 PersistActiveConversation();
             });
         }
@@ -418,6 +536,128 @@ public partial class ChatViewModel : ObservableObject
             _messageIdCounter = maxMessageId;
     }
 
+    private int FindMessageIndexById(long messageId)
+    {
+        for (var index = 0; index < Messages.Count; index++)
+        {
+            if (Messages[index].Id == messageId)
+                return index;
+        }
+
+        return -1;
+    }
+
+    private int ResolveRetryUserMessageIndex(int messageIndex)
+    {
+        if (messageIndex < 0 || messageIndex >= Messages.Count)
+            return -1;
+
+        var candidate = Messages[messageIndex];
+        if (candidate.IsUserMessage)
+            return messageIndex;
+
+        for (var index = messageIndex - 1; index >= 0; index--)
+        {
+            if (Messages[index].IsUserMessage)
+                return index;
+        }
+
+        return -1;
+    }
+
+    private int FindNextAssistantMessageIndex(int userMessageIndex)
+    {
+        for (var index = userMessageIndex + 1; index < Messages.Count; index++)
+        {
+            var message = Messages[index];
+            if (message.IsUserMessage)
+                break;
+
+            if (string.Equals(message.Role, "assistant", StringComparison.OrdinalIgnoreCase))
+                return index;
+        }
+
+        return -1;
+    }
+
+    private ChatUiMessage CreateStreamingAssistantMessage() =>
+        new()
+        {
+            Id = Interlocked.Increment(ref _messageIdCounter),
+            Role = "assistant",
+            IsStreaming = true,
+        };
+
+    private static void ResetAssistantMessageForRetry(ChatUiMessage assistantMessage)
+    {
+        assistantMessage.Role = "assistant";
+        assistantMessage.Content = string.Empty;
+        assistantMessage.ReasoningContent = null;
+        assistantMessage.ErrorMessage = null;
+        assistantMessage.IsStreaming = true;
+    }
+
+    private static bool IsRequestContextMessage(ChatUiMessage message) =>
+        (message.Role is "user" or "assistant" or "system")
+        && (!string.IsNullOrEmpty(message.Content) || message.Attachments is { Count: > 0 });
+
+    private async Task<string> GenerateConversationTitleAsync(string userText)
+    {
+        var fallbackTitle = BuildFallbackConversationTitle(userText);
+        if (_client is null ||
+            string.IsNullOrWhiteSpace(SelectedModelId) ||
+            string.IsNullOrWhiteSpace(_autoTitleFunctionDescription))
+        {
+            return fallbackTitle;
+        }
+
+        var titleParameters = new AutoTitleFunctionParameters(
+            Messages
+                .Where(static message => message.Role is "user" or "assistant")
+                .Select(static message => new AutoTitleMessage(message.Role, message.Content))
+                .ToList());
+
+        Result<string> titleResult;
+        try
+        {
+            titleResult = await Task.Run(() =>
+                _client.CallFunction<AutoTitleFunctionParameters, string>(
+                    SelectedModelId,
+                    _autoTitleFunctionDescription,
+                    titleParameters));
+        }
+        catch
+        {
+            return fallbackTitle;
+        }
+
+        if (!titleResult.IsSuccess || titleResult.Response is null)
+            return fallbackTitle;
+
+        var normalized = NormalizeTitle(titleResult.Response);
+        return string.IsNullOrWhiteSpace(normalized) ? fallbackTitle : normalized;
+    }
+
+    private static string BuildFallbackConversationTitle(string userText)
+    {
+        var trimmed = userText.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+            return userText;
+
+        return trimmed.Length > 30 ? trimmed[..30] + "..." : trimmed;
+    }
+
+    private static string NormalizeTitle(string? rawTitle)
+    {
+        if (string.IsNullOrWhiteSpace(rawTitle))
+            return string.Empty;
+
+        return rawTitle
+            .Replace("\r", " ", StringComparison.Ordinal)
+            .Replace("\n", " ", StringComparison.Ordinal)
+            .Trim();
+    }
+
     private static string BuildFriendlyError(Exception ex, string operation)
     {
         if (ex is UnauthorizedAccessException || ex.Message.Contains("not allowed", StringComparison.OrdinalIgnoreCase))
@@ -444,4 +684,8 @@ public partial class ChatViewModel : ObservableObject
         FeedbackSeverity = severity;
         FeedbackMessage = message;
     }
+
+    public sealed record ReasoningEffortOption(ReasoningEffort Value, string Label);
+    private sealed record AutoTitleFunctionParameters(List<AutoTitleMessage> Messages);
+    private sealed record AutoTitleMessage(string Role, string Content);
 }

@@ -6,11 +6,17 @@ using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.WinUI.UI.Controls;
 using Core.Models;
+using Demo.Models;
 using Demo.ViewModels;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using Windows.ApplicationModel.Resources;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.Foundation;
 using Windows.Storage.Pickers;
 using Windows.System;
 using WinRT.Interop;
@@ -20,9 +26,15 @@ namespace Demo.Views;
 public sealed partial class ChatPage : UserControl
 {
     public ChatViewModel ViewModel { get; }
+    private readonly ResourceLoader _resourceLoader;
+    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _modelsRefreshTimer;
     private int _feedbackVersion;
     private bool _didInitialLoad;
     private readonly List<PendingAttachment> _pendingAttachments = [];
+    private long? _messageContextMenuTargetId;
+    private string? _messageContextMenuSelectedText;
+    private string? _messageContextMenuMessageContent;
+    private TextBlock? _messageContextMenuSelectionTextBlock;
 
     private static readonly HashSet<string> s_imageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -46,6 +58,13 @@ public sealed partial class ChatPage : UserControl
             App.ConversationStore,
             Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
         InitializeComponent();
+        _resourceLoader = ResourceLoader.GetForViewIndependentUse();
+        ApplyLocalizedStrings();
+        ViewModel.SetAutoTitleFunctionDescription(GetRequiredString("ChatAutoTitleFunctionDescription"));
+        _modelsRefreshTimer = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread().CreateTimer();
+        _modelsRefreshTimer.Interval = TimeSpan.FromSeconds(20);
+        _modelsRefreshTimer.IsRepeating = true;
+        _modelsRefreshTimer.Tick += ModelsRefreshTimer_Tick;
         ModelSelector.ItemsSource = ViewModel.AvailableModels;
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
     }
@@ -59,13 +78,27 @@ public sealed partial class ChatPage : UserControl
         ViewModel.SetClient(App.Client);
         UpdateFeedbackBar();
         UpdateAttachmentComposer();
+        ReloadModels();
+        StartAutoRefresh();
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        StopAutoRefresh();
     }
 
     public void UpdateClient(Client.FireBoxClient? client)
     {
         ViewModel.SetClient(client);
         if (client is null)
+        {
             ClearPendingAttachments();
+            StopAutoRefresh();
+            return;
+        }
+
+        ReloadModels();
+        StartAutoRefresh();
     }
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -84,13 +117,14 @@ public sealed partial class ChatPage : UserControl
         UpdateAttachmentComposer();
     }
 
-    private void ModelSelector_DropDownOpened(object sender, object e)
-    {
-        ReloadModels();
-    }
-
     private async void SendButton_Click(object sender, RoutedEventArgs e)
     {
+        if (ViewModel.IsStreaming)
+        {
+            ViewModel.TryCancelStreaming();
+            return;
+        }
+
         await SendAsync();
     }
 
@@ -117,19 +151,11 @@ public sealed partial class ChatPage : UserControl
         ScrollToBottom();
     }
 
-    private void ClearButton_Click(object sender, RoutedEventArgs e)
-    {
-        ViewModel.ClearChatCommand.Execute(null);
-        ClearPendingAttachments();
-    }
-
-    private void RefreshModels_Click(object sender, RoutedEventArgs e)
-    {
-        ReloadModels();
-    }
-
     public void ReloadModels()
     {
+        if (!ViewModel.IsConnected || ViewModel.IsStreaming)
+            return;
+
         ViewModel.LoadModels();
 
         if (!string.IsNullOrWhiteSpace(ViewModel.SelectedModelId) &&
@@ -149,6 +175,23 @@ public sealed partial class ChatPage : UserControl
 
         ModelSelector.SelectedIndex = -1;
         UpdateAttachmentComposer();
+    }
+
+    private void StartAutoRefresh()
+    {
+        if (!_modelsRefreshTimer.IsRunning)
+            _modelsRefreshTimer.Start();
+    }
+
+    private void StopAutoRefresh()
+    {
+        if (_modelsRefreshTimer.IsRunning)
+            _modelsRefreshTimer.Stop();
+    }
+
+    private void ModelsRefreshTimer_Tick(Microsoft.UI.Dispatching.DispatcherQueueTimer sender, object args)
+    {
+        ReloadModels();
     }
 
     private async void PickFileButton_Click(object sender, RoutedEventArgs e)
@@ -250,15 +293,15 @@ public sealed partial class ChatPage : UserControl
     {
         if (!ViewModel.SupportsAnyAttachmentInput)
         {
-            AttachmentPanel.Visibility = Visibility.Collapsed;
+            AttachmentRail.Visibility = Visibility.Collapsed;
+            PickFileButton.Visibility = Visibility.Collapsed;
             InputBox.PlaceholderText = "Type a message...";
             ClearPendingAttachments();
             return;
         }
 
-        AttachmentPanel.Visibility = Visibility.Visible;
+        PickFileButton.Visibility = Visibility.Visible;
         InputBox.PlaceholderText = "Type a message or attach files...";
-        AttachmentHintText.Text = $"Supported input: {ViewModel.SelectedModelInputFormatsLabel}";
 
         _pendingAttachments.RemoveAll(item => !ViewModel.SupportsInputFormat(item.MediaFormat));
         RenderPendingAttachments();
@@ -270,35 +313,60 @@ public sealed partial class ChatPage : UserControl
         ViewModel.SetPendingAttachmentsCount(_pendingAttachments.Count);
 
         if (_pendingAttachments.Count == 0)
+        {
+            AttachmentRail.Visibility = Visibility.Collapsed;
             return;
+        }
+
+        AttachmentRail.Visibility = Visibility.Visible;
 
         foreach (var item in _pendingAttachments)
         {
-            var row = new Grid
+            var rowSurface = new Border
             {
-                ColumnSpacing = 8,
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(8, 4, 4, 4),
+                Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
             };
+            var row = new Grid { ColumnSpacing = 6 };
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
+            var icon = new FontIcon
+            {
+                Glyph = "\uE8A5",
+                FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["SymbolThemeFontFamily"],
+                FontSize = 12,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            Grid.SetColumn(icon, 0);
+            row.Children.Add(icon);
+
             var label = new TextBlock
             {
-                Text = $"{item.FileName} ({item.MediaFormat}, {FormatFileSize(item.SizeBytes)})",
-                TextWrapping = TextWrapping.Wrap,
+                Text = item.FileName,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = 420,
             };
-            Grid.SetColumn(label, 0);
+            Grid.SetColumn(label, 1);
             row.Children.Add(label);
 
             var removeButton = new Button
             {
-                Content = "Remove",
+                Content = "X",
                 Tag = item.FilePath,
+                Padding = new Thickness(6, 0, 6, 0),
+                MinWidth = 24,
+                Height = 24,
             };
             removeButton.Click += RemovePendingAttachment_Click;
-            Grid.SetColumn(removeButton, 1);
+            Grid.SetColumn(removeButton, 2);
             row.Children.Add(removeButton);
 
-            AttachmentListPanel.Children.Add(row);
+            rowSurface.Child = row;
+            AttachmentListPanel.Children.Add(rowSurface);
         }
     }
 
@@ -348,15 +416,6 @@ public sealed partial class ChatPage : UserControl
         return "application/octet-stream";
     }
 
-    private static string FormatFileSize(long sizeBytes)
-    {
-        if (sizeBytes >= 1024L * 1024L)
-            return $"{sizeBytes / (1024d * 1024d):F1} MB";
-        if (sizeBytes >= 1024L)
-            return $"{sizeBytes / 1024d:F1} KB";
-        return $"{sizeBytes} B";
-    }
-
     private void ScrollToBottom()
     {
         if (ViewModel.Messages.Count > 0)
@@ -377,6 +436,148 @@ public sealed partial class ChatPage : UserControl
             return;
 
         await Launcher.LaunchUriAsync(uri);
+    }
+
+    private void MessageBubble_ContextRequested(UIElement sender, ContextRequestedEventArgs e)
+    {
+        var menuAnchor = sender as FrameworkElement ?? FindMessageAnchor(e.OriginalSource as DependencyObject);
+        if (menuAnchor is null || menuAnchor.DataContext is not ChatUiMessage message)
+            return;
+
+        _messageContextMenuTargetId = message.Id;
+        _messageContextMenuSelectionTextBlock = FindSelectedTextBlock(e.OriginalSource as DependencyObject, menuAnchor);
+        _messageContextMenuSelectedText = _messageContextMenuSelectionTextBlock?.SelectedText;
+        _messageContextMenuMessageContent = message.Content;
+
+        var hasSelectedText = !string.IsNullOrWhiteSpace(_messageContextMenuSelectedText);
+        var hasMessageContent = !string.IsNullOrWhiteSpace(_messageContextMenuMessageContent);
+        var supportsMessageActions = message.Role is "user" or "assistant";
+
+        MessageBubbleSelectAllMenuItem.Visibility = Visibility.Visible;
+        MessageBubbleCopyMenuItem.Visibility = hasSelectedText ? Visibility.Visible : Visibility.Collapsed;
+        MessageBubbleRetryMenuItem.Visibility = !hasSelectedText && supportsMessageActions ? Visibility.Visible : Visibility.Collapsed;
+        MessageBubbleDeleteMenuItem.Visibility = !hasSelectedText && supportsMessageActions ? Visibility.Visible : Visibility.Collapsed;
+
+        MessageBubbleSelectAllMenuItem.IsEnabled = hasMessageContent;
+        MessageBubbleCopyMenuItem.IsEnabled = hasSelectedText;
+        MessageBubbleRetryMenuItem.IsEnabled = !hasSelectedText && supportsMessageActions && ViewModel.IsConnected && !ViewModel.IsStreaming;
+        MessageBubbleDeleteMenuItem.IsEnabled = !hasSelectedText && supportsMessageActions && !ViewModel.IsStreaming;
+
+        Windows.Foundation.Point position;
+        if (!e.TryGetPosition(menuAnchor, out position))
+            position = new Windows.Foundation.Point(menuAnchor.ActualWidth / 2, menuAnchor.ActualHeight / 2);
+
+        MessageBubbleMenuFlyout.ShowAt(menuAnchor, new FlyoutShowOptions { Position = position });
+        e.Handled = true;
+    }
+
+    private void MessageBubbleSelectAllMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (_messageContextMenuSelectionTextBlock is not null)
+        {
+            _messageContextMenuSelectionTextBlock.SelectAll();
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_messageContextMenuMessageContent))
+            CopyTextToClipboard(_messageContextMenuMessageContent);
+    }
+
+    private void MessageBubbleCopyMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_messageContextMenuSelectedText))
+            return;
+
+        CopyTextToClipboard(_messageContextMenuSelectedText);
+    }
+
+    private async void MessageBubbleRetryMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (_messageContextMenuTargetId is null)
+            return;
+
+        var messageId = _messageContextMenuTargetId.Value;
+        ClearMessageContextMenuState();
+        if (await ViewModel.RetryMessageAsync(messageId))
+            ScrollToBottom();
+    }
+
+    private void MessageBubbleDeleteMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (_messageContextMenuTargetId is null)
+            return;
+
+        var messageId = _messageContextMenuTargetId.Value;
+        ClearMessageContextMenuState();
+        ViewModel.DeleteMessage(messageId);
+    }
+
+    private void MessageBubbleMenuFlyout_Closed(object sender, object e)
+    {
+        ClearMessageContextMenuState();
+    }
+
+    private void ClearMessageContextMenuState()
+    {
+        _messageContextMenuTargetId = null;
+        _messageContextMenuSelectedText = null;
+        _messageContextMenuMessageContent = null;
+        _messageContextMenuSelectionTextBlock = null;
+    }
+
+    private static T? FindAncestorOrSelf<T>(DependencyObject? node) where T : DependencyObject
+    {
+        while (node is not null)
+        {
+            if (node is T target)
+                return target;
+
+            node = VisualTreeHelper.GetParent(node);
+        }
+
+        return null;
+    }
+
+    private static TextBlock? FindSelectedTextBlock(DependencyObject? originalSource, DependencyObject scopeRoot)
+    {
+        var directTextBlock = FindAncestorOrSelf<TextBlock>(originalSource);
+        if (!string.IsNullOrWhiteSpace(directTextBlock?.SelectedText))
+            return directTextBlock;
+
+        return EnumerateDescendants(scopeRoot)
+            .OfType<TextBlock>()
+            .FirstOrDefault(static textBlock => !string.IsNullOrWhiteSpace(textBlock.SelectedText));
+    }
+
+    private static IEnumerable<DependencyObject> EnumerateDescendants(DependencyObject root)
+    {
+        var queue = new Queue<DependencyObject>();
+        queue.Enqueue(root);
+
+        while (queue.Count > 0)
+        {
+            var node = queue.Dequeue();
+            yield return node;
+
+            var childrenCount = VisualTreeHelper.GetChildrenCount(node);
+            for (var i = 0; i < childrenCount; i++)
+            {
+                queue.Enqueue(VisualTreeHelper.GetChild(node, i));
+            }
+        }
+    }
+
+    private static FrameworkElement? FindMessageAnchor(DependencyObject? node)
+    {
+        while (node is not null)
+        {
+            if (node is FrameworkElement element && element.DataContext is ChatUiMessage)
+                return element;
+
+            node = VisualTreeHelper.GetParent(node);
+        }
+
+        return null;
     }
 
     private void UpdateFeedbackBar()
@@ -402,6 +603,33 @@ public sealed partial class ChatPage : UserControl
         };
         FeedbackBar.Message = ViewModel.FeedbackMessage;
         FeedbackBar.IsOpen = true;
+    }
+
+    private void ApplyLocalizedStrings()
+    {
+        MessageBubbleSelectAllMenuItem.Text = GetRequiredString("ChatMessageMenuSelectAll");
+        MessageBubbleCopyMenuItem.Text = GetRequiredString("ChatMessageMenuCopy");
+        MessageBubbleRetryMenuItem.Text = GetRequiredString("ChatMessageMenuRetry");
+        MessageBubbleDeleteMenuItem.Text = GetRequiredString("ChatMessageMenuDelete");
+    }
+
+    private string GetRequiredString(string key)
+    {
+        var value = _resourceLoader.GetString(key);
+        if (string.IsNullOrWhiteSpace(value))
+            throw new InvalidOperationException($"Missing required string resource '{key}'.");
+
+        return value;
+    }
+
+    private static void CopyTextToClipboard(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        var dataPackage = new DataPackage();
+        dataPackage.SetText(text);
+        Clipboard.SetContent(dataPackage);
     }
 
     private sealed record PendingAttachment(

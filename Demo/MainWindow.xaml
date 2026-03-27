@@ -3,9 +3,8 @@
     x:Class="Demo.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:Demo"
     xmlns:views="using:Demo.Views"
-    Title="FireBox Demo">
+    Title="">
 
     <Window.SystemBackdrop>
         <MicaBackdrop />
@@ -22,9 +21,10 @@
             Background="{ThemeResource LayerOnAcrylicFillColorDefaultBrush}"
             BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
             BorderThickness="0,0,0,1">
-            <Grid>
+            <Grid x:Name="TitleBarDragRegion">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="12" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="140" />
                 </Grid.ColumnDefinitions>
@@ -36,16 +36,62 @@
                     Margin="16,0,20,0">
                     <FontIcon Glyph="&#xE8BD;" FontSize="16" />
                     <StackPanel Spacing="0" VerticalAlignment="Center">
-                        <TextBlock Text="FireBox Demo"
-                            FontSize="14"
-                            FontWeight="SemiBold" />
-                        <TextBlock Text="Chat Playground"
-                            FontSize="11"
-                            Opacity="0.72" />
+                        <TextBlock x:Name="TitleBarAppNameText"
+                                   Text=""
+                                   FontSize="14"
+                                   FontWeight="SemiBold" />
                     </StackPanel>
                 </StackPanel>
 
-                <Grid x:Name="TitleBarDragRegion" Grid.Column="1" />
+                <Grid Grid.Column="2"
+                      Margin="8,6,8,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="4*" />
+                        <ColumnDefinition Width="10*" />
+                        <ColumnDefinition Width="4*" />
+                    </Grid.ColumnDefinitions>
+
+                    <AutoSuggestBox x:Name="TitleBarSearchBox"
+                                    Grid.Column="1"
+                                    HorizontalAlignment="Stretch"
+                                    PlaceholderText=""
+                                    QueryIcon="Find"
+                                    UpdateTextOnSelect="False"
+                                    TextChanged="TitleBarSearchBox_TextChanged"
+                                    SuggestionChosen="TitleBarSearchBox_SuggestionChosen"
+                                    QuerySubmitted="TitleBarSearchBox_QuerySubmitted">
+                        <AutoSuggestBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Padding="8,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="10" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Border Grid.Column="0"
+                                            Width="28"
+                                            Height="28"
+                                            CornerRadius="6"
+                                            Background="{ThemeResource LayerFillColorDefaultBrush}">
+                                        <SymbolIcon Symbol="Message"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center" />
+                                    </Border>
+
+                                    <StackPanel Grid.Column="2"
+                                                Spacing="1">
+                                        <TextBlock Text="{Binding Title}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Subtitle}"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </AutoSuggestBox.ItemTemplate>
+                    </AutoSuggestBox>
+                </Grid>
             </Grid>
         </Border>
 
@@ -58,7 +104,7 @@
         <NavigationView x:Name="ConversationNavView"
             Grid.Row="2"
             IsBackButtonVisible="Collapsed"
-            IsSettingsVisible="False"
+            IsSettingsVisible="True"
             PaneDisplayMode="Left"
             CompactPaneLength="48"
             OpenPaneLength="320"
@@ -100,14 +146,20 @@
                 </DataTemplate>
             </NavigationView.MenuItemTemplate>
 
-            <views:ChatPage x:Name="ChatPageView" />
+            <Grid>
+                <views:ChatPage x:Name="ChatPageView" />
+                <views:SettingsPage x:Name="SettingsPageView" Visibility="Collapsed" />
+            </Grid>
         </NavigationView>
 
         <Grid x:Name="LoadingOverlay" Grid.Row="2"
             Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" Visibility="Collapsed">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
-                <ProgressRing IsActive="True" Width="48" Height="48" />
-                <TextBlock Text="Connecting to FireBox..." FontSize="16"
+                <ProgressBar IsIndeterminate="True"
+                             Width="280"
+                             Height="4" />
+                <TextBlock x:Name="LoadingStatusText"
+                    FontSize="16"
                     Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </StackPanel>
         </Grid>

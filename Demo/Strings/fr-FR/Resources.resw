@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="MainWindowTitle" xml:space="preserve">
+    <value>FireChatBox</value>
+  </data>
+  <data name="TitleBarAppName" xml:space="preserve">
+    <value>FireChatBox</value>
+  </data>
+  <data name="TitleBarSearchPlaceholder" xml:space="preserve">
+    <value>Rechercher des conversations</value>
+  </data>
+  <data name="LoadingOverlayConnectingText" xml:space="preserve">
+    <value>Connexion a FireBox...</value>
+  </data>
+  <data name="SettingsTitle" xml:space="preserve">
+    <value>Preferences</value>
+  </data>
+  <data name="SettingsTabGeneral" xml:space="preserve">
+    <value>General</value>
+  </data>
+  <data name="SettingsTabAbout" xml:space="preserve">
+    <value>A propos</value>
+  </data>
+  <data name="SettingsSectionGeneral" xml:space="preserve">
+    <value>General</value>
+  </data>
+  <data name="SettingsSectionReasoning" xml:space="preserve">
+    <value>Raisonnement</value>
+  </data>
+  <data name="SettingsSectionComposer" xml:space="preserve">
+    <value>Composition</value>
+  </data>
+  <data name="SettingsModelAutoRefreshHeader" xml:space="preserve">
+    <value>Actualisation automatique des modeles</value>
+  </data>
+  <data name="SettingsModelAutoRefreshDescription" xml:space="preserve">
+    <value>Actualise automatiquement les modeles disponibles dans le chat.</value>
+  </data>
+  <data name="SettingsThinkingIntensityHeader" xml:space="preserve">
+    <value>Intensite de reflexion par defaut</value>
+  </data>
+  <data name="SettingsThinkingIntensityDescription" xml:space="preserve">
+    <value>Choisissez le niveau de raisonnement initial pour les nouveaux messages.</value>
+  </data>
+  <data name="SettingsThinkingDefaultOption" xml:space="preserve">
+    <value>Valeur par defaut du fournisseur</value>
+  </data>
+  <data name="SettingsThinkingLowOption" xml:space="preserve">
+    <value>Faible</value>
+  </data>
+  <data name="SettingsThinkingMediumOption" xml:space="preserve">
+    <value>Moyen</value>
+  </data>
+  <data name="SettingsThinkingHighOption" xml:space="preserve">
+    <value>Eleve</value>
+  </data>
+  <data name="SettingsThinkingMaxOption" xml:space="preserve">
+    <value>Maximum</value>
+  </data>
+  <data name="SettingsCompactComposerHeader" xml:space="preserve">
+    <value>Compositeur compact</value>
+  </data>
+  <data name="SettingsCompactComposerDescription" xml:space="preserve">
+    <value>Utilise un espacement plus dense pour la zone de saisie inferieure.</value>
+  </data>
+  <data name="SettingsAboutAppHeader" xml:space="preserve">
+    <value>Application</value>
+  </data>
+  <data name="SettingsAboutAppDescription" xml:space="preserve">
+    <value>Informations de build et de produit.</value>
+  </data>
+  <data name="SettingsAboutVersionLabel" xml:space="preserve">
+    <value>Version</value>
+  </data>
+  <data name="ChatAutoTitleFunctionDescription" xml:space="preserve">
+    <value>Genere un seul titre de conversation concis a partir des messages fournis. Retourne uniquement le texte du titre, sans markdown ni explication.</value>
+  </data>
+  <data name="ChatMessageMenuRetry" xml:space="preserve">
+    <value>Reessayer</value>
+  </data>
+  <data name="ChatMessageMenuSelectAll" xml:space="preserve">
+    <value>Tout selectionner</value>
+  </data>
+  <data name="ChatMessageMenuCopy" xml:space="preserve">
+    <value>Copier</value>
+  </data>
+  <data name="ChatMessageMenuDelete" xml:space="preserve">
+    <value>Supprimer</value>
+  </data>
+</root>

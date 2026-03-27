@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="metadata">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" use="required" type="xsd:string" />
+              <xsd:attribute name="type" type="xsd:string" />
+              <xsd:attribute name="mimetype" type="xsd:string" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="assembly">
+            <xsd:complexType>
+              <xsd:attribute name="alias" type="xsd:string" />
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="MainWindowTitle" xml:space="preserve">
+    <value>FireChatBox</value>
+  </data>
+  <data name="TitleBarAppName" xml:space="preserve">
+    <value>FireChatBox</value>
+  </data>
+  <data name="TitleBarSearchPlaceholder" xml:space="preserve">
+    <value>Search conversations</value>
+  </data>
+  <data name="LoadingOverlayConnectingText" xml:space="preserve">
+    <value>Connecting to FireBox...</value>
+  </data>
+  <data name="SettingsTitle" xml:space="preserve">
+    <value>Preferences</value>
+  </data>
+  <data name="SettingsTabGeneral" xml:space="preserve">
+    <value>General</value>
+  </data>
+  <data name="SettingsTabAbout" xml:space="preserve">
+    <value>About</value>
+  </data>
+  <data name="SettingsSectionGeneral" xml:space="preserve">
+    <value>General</value>
+  </data>
+  <data name="SettingsSectionReasoning" xml:space="preserve">
+    <value>Reasoning</value>
+  </data>
+  <data name="SettingsSectionComposer" xml:space="preserve">
+    <value>Composer</value>
+  </data>
+  <data name="SettingsModelAutoRefreshHeader" xml:space="preserve">
+    <value>Model Auto Refresh</value>
+  </data>
+  <data name="SettingsModelAutoRefreshDescription" xml:space="preserve">
+    <value>Refresh available models automatically in chat.</value>
+  </data>
+  <data name="SettingsThinkingIntensityHeader" xml:space="preserve">
+    <value>Default Thinking Intensity</value>
+  </data>
+  <data name="SettingsThinkingIntensityDescription" xml:space="preserve">
+    <value>Choose the initial reasoning level for new messages.</value>
+  </data>
+  <data name="SettingsThinkingDefaultOption" xml:space="preserve">
+    <value>Provider default</value>
+  </data>
+  <data name="SettingsThinkingLowOption" xml:space="preserve">
+    <value>Low</value>
+  </data>
+  <data name="SettingsThinkingMediumOption" xml:space="preserve">
+    <value>Medium</value>
+  </data>
+  <data name="SettingsThinkingHighOption" xml:space="preserve">
+    <value>High</value>
+  </data>
+  <data name="SettingsThinkingMaxOption" xml:space="preserve">
+    <value>Max</value>
+  </data>
+  <data name="SettingsCompactComposerHeader" xml:space="preserve">
+    <value>Compact Composer</value>
+  </data>
+  <data name="SettingsCompactComposerDescription" xml:space="preserve">
+    <value>Use denser spacing for the bottom input area.</value>
+  </data>
+  <data name="SettingsAboutAppHeader" xml:space="preserve">
+    <value>Application</value>
+  </data>
+  <data name="SettingsAboutAppDescription" xml:space="preserve">
+    <value>Build and product information.</value>
+  </data>
+  <data name="SettingsAboutVersionLabel" xml:space="preserve">
+    <value>Version</value>
+  </data>
+  <data name="ChatAutoTitleFunctionDescription" xml:space="preserve">
+    <value>Generate one concise conversation title from the provided messages. Return title text only, no markdown and no extra explanation.</value>
+  </data>
+  <data name="ChatMessageMenuRetry" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+  <data name="ChatMessageMenuSelectAll" xml:space="preserve">
+    <value>Select all</value>
+  </data>
+  <data name="ChatMessageMenuCopy" xml:space="preserve">
+    <value>Copy</value>
+  </data>
+  <data name="ChatMessageMenuDelete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+</root>
