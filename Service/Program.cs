@@ -27,30 +27,7 @@ if (ComArgs.HasArg(args, "/UnregServer", "-UnregServer"))
     return;
 }
 
-// In packaged (MSIX) deployments the manifest declares all COM registrations;
-// self-registration is only needed in unpackaged (Debug) mode.
-if (!PackageIdentityHelper.IsRunningAsPackaged())
-{
-    try
-    {
-        ComSelfRegistration.UnregisterPerUser();
-    }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine($"COM unregister skipped: {ex.Message}");
-        ServiceRuntimeLog.WriteError(null, "Program.ComUnregister", ex, "COM unregister skipped.");
-    }
-
-    try
-    {
-        ComSelfRegistration.RegisterPerUser();
-    }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine($"COM registration refresh failed: {ex.Message}");
-        ServiceRuntimeLog.WriteError(null, "Program.ComRegister", ex, "COM registration refresh failed.");
-    }
-}
+StartupComRegistration.TryRefreshPerUserComRegistration();
 
 var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
 {
@@ -269,15 +246,29 @@ file static class ServiceOptionsLoader
     }
 }
 
-file static class PackageIdentityHelper
+file static class StartupComRegistration
 {
-    public static bool IsRunningAsPackaged()
+    public static void TryRefreshPerUserComRegistration()
     {
-        int len = 0;
-        // Returns APPMODEL_ERROR_NO_PACKAGE (15700) when the process has no package identity.
-        return GetCurrentPackageFullName(ref len, null) != 15700;
-    }
+        try
+        {
+            ComSelfRegistration.UnregisterPerUser();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"COM unregister skipped: {ex.Message}");
+            ServiceRuntimeLog.WriteError(null, "Program.ComUnregister", ex, "COM unregister skipped.");
+        }
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-    private static extern int GetCurrentPackageFullName(ref int packageFullNameLength, char[]? packageFullName);
+        try
+        {
+            ComSelfRegistration.RegisterPerUser();
+            ServiceRuntimeLog.WriteInfo(null, "Program.ComRegister", "Per-user COM registration refreshed.");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"COM registration refresh failed: {ex.Message}");
+            ServiceRuntimeLog.WriteError(null, "Program.ComRegister", ex, "COM registration refresh failed.");
+        }
+    }
 }
